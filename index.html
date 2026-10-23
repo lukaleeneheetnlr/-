@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#f7f8f5" />
+  <meta name="theme-color" content="#f8f4e9" />
   <meta name="description" content="Campus Sharing Hub — พื้นที่ค้นหาและแบ่งปันของใช้ระยะสั้นในมหาวิทยาลัย" />
   <title>Campus Sharing Hub — ของที่ต้องใช้ ไม่จำเป็นต้องซื้อ</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,6 +23,98 @@
     @media(max-width:1000px){.hero-grid{gap:28px}.hero-art{min-height:380px}.hero-photo{height:320px}.category-grid{grid-template-columns:repeat(3,1fr)}.listing-grid{grid-template-columns:repeat(2,1fr)}.search-panel{grid-template-columns:1fr 1fr}.search-divider{display:none}.search-submit{min-height:48px}.nav-links{gap:17px}.demand-content{padding:32px}}
     @media(max-width:700px){.container{width:min(100% - 30px,540px)}.topbar{height:66px}.brand{font-size:14px}.brand-mark{width:34px;height:34px;border-radius:11px}.nav-links,.nav-actions .btn-secondary{display:none}.mobile-menu{display:grid}.nav-actions .btn-primary{padding:9px 13px;font-size:12px}.hero{padding:30px 0 20px}.hero-grid{grid-template-columns:1fr;gap:27px}.hero h1{font-size:43px;letter-spacing:-1.3px;margin:16px 0 13px}.hero-copy{font-size:14px}.hero-actions{margin:20px 0}.hero-art{min-height:325px;border-radius:24px}.hero-photo{height:285px;width:82%}.float-card.one{top:24px;left:15px;padding:10px 12px}.float-card.two{right:12px;bottom:15px;padding:10px 12px}.hero-sticker{width:62px;height:62px;right:15px;top:15px;font-size:9px}.search-section{margin:16px auto 25px}.search-panel{grid-template-columns:1fr;gap:0;padding:9px}.search-field{padding:8px 10px}.search-field input,.search-field select{font-size:13px}.search-submit{margin-top:6px}.section{padding:25px 0 35px}.section-head{align-items:flex-start}.section h2{font-size:26px}.section-desc{font-size:12px}.category-grid{grid-template-columns:1fr 1fr;gap:9px}.category-card{padding:12px 10px;gap:9px;border-radius:15px}.category-symbol{width:39px;height:39px;border-radius:12px;font-size:19px}.category-card strong{font-size:11px}.category-card small{font-size:10px}.toolbar{align-items:flex-start;flex-direction:column;margin:17px 0}.filter-row{gap:6px}.chip{font-size:11px;padding:7px 10px}.sort-select{width:100%}.listing-grid{grid-template-columns:1fr 1fr;gap:10px}.listing-image-wrap{height:145px}.listing-body{padding:11px}.listing-meta{font-size:9px}.owner{gap:4px}.avatar{width:20px;height:20px}.listing-title{font-size:13px}.listing-location{font-size:10px}.listing-bottom{margin-top:10px;padding-top:10px;align-items:center}.price{font-size:16px}.price small{font-size:9px}.deposit{font-size:9px}.tiny-btn{padding:7px 8px;font-size:10px}.tag{top:8px;left:8px;padding:5px 7px;font-size:9px}.heart{right:8px;top:8px;width:29px;height:29px}.demand-section{padding:28px 0 43px}.demand-card{grid-template-columns:1fr}.demand-content{padding:27px 23px 25px}.demand-content h2{font-size:29px}.demand-content p{font-size:13px}.demand-visual{min-height:235px}.demand-note{left:13px;right:13px;bottom:13px}.how-grid{grid-template-columns:1fr;gap:10px;margin-top:18px}.how-card{padding:18px}.how-card h3{margin:10px 0 5px}.trust-strip{margin:6px 0 45px;padding:16px;align-items:flex-start}.trust-strip .btn{display:none}.trust-left{align-items:flex-start;gap:10px}.trust-strip p{line-height:1.7}.footer-row{align-items:flex-start;flex-direction:column}.footer-note{text-align:left}.form-grid{grid-template-columns:1fr}.form-field.full{grid-column:auto}.modal-backdrop{padding:10px}.modal{border-radius:19px;max-height:92vh}.modal-head{padding:20px 19px 12px}.modal-head h2{font-size:20px}.modal-content{padding:7px 19px 21px}.detail-layout{grid-template-columns:1fr;gap:15px}.detail-img{height:220px}.detail-copy h3{font-size:19px}.mobile-bottom{display:flex;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);padding:9px 14px calc(9px + env(safe-area-inset-bottom));z-index:19;gap:10px}.mobile-bottom .btn{flex:1}.toast{bottom:85px;font-size:12px}.section-head .text-link{font-size:11px}}
     @media(max-width:390px){.hero h1{font-size:38px}.listing-grid{grid-template-columns:1fr}.listing-image-wrap{height:190px}.listing-title{font-size:15px}.price{font-size:18px}.category-card{padding:10px 8px}.category-symbol{width:34px;height:34px}.nav-actions .btn-primary{font-size:11px;padding:8px 10px}}
+
+    /* Refined UI layer: clearer hierarchy, more tactile controls, and calmer spacing. */
+    :root{--paper:#f8f4e9;--green:#24563d;--green-dark:#173d2b;--lime:#dce9a7;--line:#e7dfcf;--muted:#687366;--white:#fffdf7;--soft:#f0eadb;--shadow:0 18px 48px rgba(35,65,43,.10)}
+    body{background:radial-gradient(ellipse at 8% 0%,rgba(221,232,195,.42),transparent 34rem),var(--paper);letter-spacing:.005em}
+    ::selection{background:#dce9a7;color:#173d2b}
+    :focus-visible{outline:3px solid #6f963f!important;outline-offset:3px} .heart:focus-visible,.tiny-btn:focus-visible,.chip:focus-visible,.category-card:focus-visible,.sort-select:focus-visible,.search-field input:focus-visible,.search-field select:focus-visible{outline:3px solid #72964b!important;outline-offset:3px} .heart[aria-pressed="true"]{background:#fff1ef;color:#b83c39} .chip.active{box-shadow:0 5px 12px rgba(23,61,43,.16)} .search-submit{min-height:48px}
+    .topbar{background:rgba(248,244,233,.92);border-bottom-color:#e8e0d1;box-shadow:0 4px 20px rgba(48,58,38,.035)}
+    .brand-mark{border-radius:12px;background:linear-gradient(145deg,#2b7a55,#174c33);box-shadow:0 8px 18px rgba(31,104,72,.22)}
+    .nav-links a{position:relative;padding:9px 0;transition:color .18s ease}
+    .nav-links a:after{content:"";position:absolute;left:0;right:100%;bottom:2px;height:2px;background:var(--green);border-radius:4px;transition:right .18s ease}
+    .nav-links a:hover:after{right:0}
+    .btn{min-height:43px;transition:transform .18s ease,box-shadow .18s ease,background .18s ease}
+    .btn-primary{background:linear-gradient(135deg,#287b53,#1c5c3e);box-shadow:0 8px 18px rgba(31,104,72,.17)}
+    .btn-primary:hover{background:linear-gradient(135deg,#216b48,#143f2d);box-shadow:0 11px 22px rgba(31,104,72,.22)}
+    .btn-secondary{background:#fffdf7;border-color:#e1d9c8;box-shadow:0 2px 5px rgba(45,52,36,.035)}
+    .hero{padding-top:62px;padding-bottom:40px}
+    .hero-grid{gap:clamp(30px,5vw,64px)}
+    .eyebrow{border:1px solid #dbe9d2;background:#edf5e6;padding:8px 13px}
+    .hero h1{letter-spacing:-1.5px;line-height:1.18}
+    .hero-copy{line-height:1.95}
+    .hero-art{background:linear-gradient(145deg,#eee8d5,#dce8ce);border:1px solid rgba(45,88,52,.10);box-shadow:inset 0 1px 0 #ffffffb8;min-height:435px}
+    .hero-photo{filter:saturate(.86);border-top-left-radius:170px;mask-image:linear-gradient(90deg,transparent 0%,#000 24%)}
+    .float-card{border:1px solid #ffffffb8;box-shadow:0 15px 35px rgba(31,57,36,.13);backdrop-filter:blur(8px)}
+    .float-card.one{top:57px}.float-card.two{bottom:30px}
+    .search-section{margin-bottom:45px}
+    .search-panel{padding:11px;border-radius:22px;border-color:#e7dfcf;background:#fffdf7;box-shadow:0 18px 42px rgba(47,53,35,.075)}
+    .search-field{padding:10px 15px}
+    .search-field:focus-within{background:#f5f9f1;border-radius:13px}
+    .search-field input:focus,.search-field select:focus{outline:none}
+    .search-submit{min-width:118px}
+    .section{padding-top:40px;padding-bottom:56px}
+    .section-kicker{letter-spacing:1.35px}
+    .section h2{letter-spacing:-.8px}
+    .category-grid{gap:14px}
+    .category-card{border-radius:20px;padding:19px 15px;background:#fffdf7;box-shadow:0 3px 12px rgba(45,52,36,.035)}
+    .category-card:hover,.category-card.active{border-color:#99b78b;background:#f0f4e5;box-shadow:0 10px 24px rgba(37,84,47,.08)}
+    .category-symbol{background:linear-gradient(145deg,#f5f0e3,#e9efdf);border:1px solid #e9e2d3}
+    .listings-section{padding-top:22px}
+    .toolbar{margin:26px 0 19px}
+    .chip{padding:9px 15px;border-color:#e6dece;background:#fffdf7}
+    .sort-select{min-height:42px;border-color:#e4dccb;background:#fffdf7}
+    .listing-grid{gap:22px}
+    .listing-card{border-radius:22px;background:#fffdf7;border-color:#e8e0d0;box-shadow:0 4px 16px rgba(47,53,35,.035)}
+    .listing-card:hover{transform:translateY(-5px);box-shadow:0 20px 42px rgba(27,56,35,.11);border-color:#cbdcc6}
+    .listing-image-wrap{height:225px;background:#eee9dc}
+    .listing-image{transition:transform .5s cubic-bezier(.2,.7,.2,1)}
+    .tag{box-shadow:0 3px 10px rgba(18,40,25,.07);padding:7px 11px}
+    .heart{box-shadow:0 3px 12px rgba(18,40,25,.08);transition:transform .16s ease,color .16s ease}
+    .heart:hover{transform:scale(1.08)}
+    .listing-body{padding:17px}
+    .listing-title{font-size:16px;min-height:2.75em}
+    .price{color:var(--green-dark)}
+    .tiny-btn{min-height:39px;background:#f2f4e7;border-color:#dce3d2;transition:background .16s ease,transform .16s ease}
+    .tiny-btn:hover{background:#e6f1dc;transform:translateY(-1px)}
+    .demand-section{padding-top:38px;padding-bottom:65px}
+    .demand-card{border-radius:30px;box-shadow:0 20px 48px rgba(20,63,45,.13)}
+    .demand-content{padding:clamp(30px,4vw,48px)}
+    .demand-visual img{filter:saturate(.85)}
+    .demand-note{border:1px solid #ffffff;box-shadow:0 15px 35px rgba(25,50,28,.12)}
+    .how-card{border-radius:20px;border-color:#e3eae0;box-shadow:0 4px 16px rgba(27,56,35,.025);transition:transform .2s ease,box-shadow .2s ease}
+    .how-card:hover{transform:translateY(-3px);box-shadow:0 12px 28px rgba(27,56,35,.07)}
+    .step-num{background:#e9f3df;border:1px solid #dcebd2}
+    .trust-strip{border:1px solid #e7dfcf;background:linear-gradient(120deg,#f0f1e3,#fffdf7);border-radius:22px}
+    .footer{border-top:1px solid #e4eae0}
+    .modal{border:1px solid #e1e9dd;box-shadow:0 28px 80px rgba(13,37,22,.24)}
+    .modal-head{background:linear-gradient(120deg,#f4f0e2,#fffdf7)}
+    .form-field input:focus,.form-field select:focus,.form-field textarea:focus{border-color:#6f9a60;box-shadow:0 0 0 3px rgba(111,154,96,.18);outline:none}
+    .toast{box-shadow:0 12px 30px rgba(12,31,18,.18)}
+    @media(max-width:1000px){.hero{padding-top:45px}.hero-art{min-height:390px}.listing-image-wrap{height:205px}}
+    @media(max-width:700px){.hero{padding-top:29px}.hero-art{min-height:320px}.hero-photo{height:280px}.search-panel{border-radius:18px}.section{padding-top:27px;padding-bottom:37px}.listing-grid{gap:11px}.listing-card{border-radius:17px}.listing-image-wrap{height:150px}.listing-body{padding:12px}.listing-title{min-height:2.7em}.demand-card{border-radius:23px}.trust-strip{border-radius:18px}}
+    @media(hover:none){.btn:hover,.category-card:hover,.listing-card:hover,.tiny-btn:hover,.heart:hover,.how-card:hover{transform:none}.listing-card:hover{box-shadow:0 4px 16px rgba(47,53,35,.035)}.listing-card:hover .listing-image{transform:none}}
+    @media(max-width:700px){body{padding-bottom:76px}.mobile-bottom{background:rgba(255,253,247,.96);backdrop-filter:blur(14px);border-top-color:#e7dfcf}.hero-art{box-shadow:0 10px 26px rgba(44,65,39,.08)}.listing-title{overflow-wrap:anywhere}.heart{width:36px;height:36px;font-size:18px}.tiny-btn{min-height:40px}.chip{min-height:38px}}
+    @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;transform:none!important}}
+
+    .mode-banner{margin:16px auto 0;padding:12px 16px;border:1px solid #e9d8a6;border-radius:14px;background:#fff8df;color:#6b5310;font-size:13px;line-height:1.7}
+    .mode-banner[hidden]{display:none}
+    .account-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+    .account-tab{border:1px solid var(--line);background:#fff;border-radius:999px;padding:9px 13px;font-size:12px;font-weight:700;color:var(--ink)}
+    .account-tab.active{background:#e9f1df;border-color:#a9c69a;color:var(--green-dark)}
+    .account-list{display:grid;gap:10px}
+    .account-row{border:1px solid var(--line);border-radius:15px;padding:14px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center}
+    .account-row h3{margin:0 0 5px;font-size:15px;overflow-wrap:anywhere}
+    .account-row p{margin:3px 0;color:var(--muted);font-size:12px;line-height:1.6}
+    .account-actions{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+    .status-pill{display:inline-block;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:700;background:#f0f2ed;color:#536154}
+    .status-pill.pending{background:#fff4d8;color:#835f00}.status-pill.approved{background:#e3f4e6;color:#176338}.status-pill.rejected,.status-pill.cancelled{background:#fbe7e6;color:#9b3530}
+    .auth-mode-row{display:flex;gap:8px;margin-bottom:16px}
+    .auth-mode-row button{flex:1}
+    .account-empty{padding:24px;border:1px dashed #d7dfd4;border-radius:14px;text-align:center;color:var(--muted);font-size:13px}
+    .btn-danger{background:#fff0ef;color:#9b3530;border:1px solid #f1cfcc}
+    @media(max-width:850px){.nav-actions{gap:6px}.nav-actions .btn{padding:9px 12px;font-size:12px}.account-row{grid-template-columns:1fr}.account-actions{justify-content:flex-start}}
+    @media(max-width:700px){.nav-actions #openRequestTop,.nav-actions #openAuthTop,.nav-actions #openAccountTop{display:none}.nav-actions #openListingTop{padding:9px 12px}}
   </style>
 </head>
 <body>
@@ -33,6 +125,8 @@
         <a href="#explore">ค้นหาของ</a><a href="#demand">ตามหาของที่ต้องการ</a><a href="#how">วิธีใช้งาน</a>
       </nav>
       <div class="nav-actions">
+        <button class="btn btn-secondary" id="openAuthTop">เข้าสู่ระบบ</button>
+        <button class="btn btn-secondary" id="openAccountTop" hidden>บัญชีของฉัน</button>
         <button class="btn btn-secondary" id="openRequestTop">＋ แจ้งสิ่งที่ต้องการ</button>
         <button class="btn btn-primary" id="openListingTop">ลงประกาศปล่อยเช่า</button>
         <button class="icon-btn mobile-menu" id="mobileMenu" aria-label="เปิดเมนู">☰</button>
@@ -41,6 +135,7 @@
   </header>
 
   <main id="home">
+    <div class="container"><div class="mode-banner" id="connectionNotice" role="status" hidden></div></div>
     <section class="hero">
       <div class="container hero-grid">
         <div>
@@ -48,7 +143,7 @@
           <h1>ของที่ต้องใช้<br>ไม่จำเป็นต้อง<br><span>ซื้อทุกครั้ง</span></h1>
           <p class="hero-copy">พื้นที่ให้คนในมหาวิทยาลัยค้นหา เช่า และแบ่งปันอุปกรณ์ที่จำเป็นสำหรับโปรเจกต์และกิจกรรม ใช้เท่าที่ต้องใช้ จ่ายเท่าที่จำเป็น</p>
           <div class="hero-actions"><a class="btn btn-primary" href="#explore">ค้นหาของที่ต้องใช้ <span>↗</span></a><button class="btn btn-secondary" id="openRequestHero">บอกเราว่ากำลังหาอะไร</button></div>
-          <div class="proof-row"><span class="proof-item"><span class="proof-icon">✓</span> ดูวันว่างก่อนจอง</span><span class="proof-item"><span class="proof-icon">▤</span> มีหลักฐานรับ–คืน</span><span class="proof-item"><span class="proof-icon">⌖</span> นัดรับในมหาวิทยาลัย</span></div>
+          <div class="proof-row"><span class="proof-item"><span class="proof-icon">✓</span> เลือกวันใช้งานได้</span><span class="proof-item"><span class="proof-icon">▤</span> เช็กเงื่อนไขก่อนตกลง</span><span class="proof-item"><span class="proof-icon">⌖</span> เน้นนัดรับในมหาวิทยาลัย</span></div>
         </div>
         <div class="hero-art" aria-label="ภาพตัวอย่างการใช้อุปกรณ์ร่วมกัน">
           <img class="hero-photo" src="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1000&q=85" alt="นักศึกษากำลังใช้งานคอมพิวเตอร์" onerror="this.style.display='none'">
@@ -73,17 +168,17 @@
     <section class="section container" id="categories">
       <div class="section-head"><div><div class="section-kicker">BROWSE BY CATEGORY</div><h2>เริ่มจากสิ่งที่คุณกำลังหา</h2><p class="section-desc">เลือกหมวดหมู่เพื่อดูของที่มีให้เช่าในเดโมนี้</p></div></div>
       <div class="category-grid" id="categoryGrid">
-        <button class="category-card" data-category="media"><span class="category-symbol">📷</span><span><strong>ถ่ายภาพและวิดีโอ</strong><small>กล้อง · ไมค์ · ขาตั้ง</small></span></button>
-        <button class="category-card" data-category="study"><span class="category-symbol">🛠️</span><span><strong>เรียนและโปรเจกต์</strong><small>เครื่องมือ · อุปกรณ์</small></span></button>
-        <button class="category-card" data-category="event"><span class="category-symbol">🎤</span><span><strong>กิจกรรมและอีเวนต์</strong><small>เสียง · แสง · นำเสนอ</small></span></button>
-        <button class="category-card" data-category="fashion"><span class="category-symbol">👔</span><span><strong>เสื้อผ้าและโอกาสพิเศษ</strong><small>ชุดสัมภาษณ์ · พร็อพ</small></span></button>
-        <button class="category-card" data-category="other"><span class="category-symbol">📦</span><span><strong>อื่น ๆ</strong><small>ของใช้เฉพาะกิจ</small></span></button>
+        <button class="category-card" data-category="media" aria-pressed="false"><span class="category-symbol">📷</span><span><strong>ถ่ายภาพและวิดีโอ</strong><small>กล้อง · ไมค์ · ขาตั้ง</small></span></button>
+        <button class="category-card" data-category="study" aria-pressed="false"><span class="category-symbol">🛠️</span><span><strong>เรียนและโปรเจกต์</strong><small>เครื่องมือ · อุปกรณ์</small></span></button>
+        <button class="category-card" data-category="event" aria-pressed="false"><span class="category-symbol">🎤</span><span><strong>กิจกรรมและอีเวนต์</strong><small>เสียง · แสง · นำเสนอ</small></span></button>
+        <button class="category-card" data-category="fashion" aria-pressed="false"><span class="category-symbol">👔</span><span><strong>เสื้อผ้าและโอกาสพิเศษ</strong><small>ชุดสัมภาษณ์ · พร็อพ</small></span></button>
+        <button class="category-card" data-category="other" aria-pressed="false"><span class="category-symbol">📦</span><span><strong>อื่น ๆ</strong><small>ของใช้เฉพาะกิจ</small></span></button>
       </div>
     </section>
 
     <section class="section listings-section container" id="explore">
-      <div class="section-head"><div><div class="section-kicker">AVAILABLE NEAR CAMPUS</div><h2>ของที่พร้อมให้เช่า</h2><p class="section-desc">รายการตัวอย่างสำหรับทดลองระบบ ราคาและข้อมูลเป็นข้อมูลสมมติ</p></div><a href="#demand" class="text-link">หาไม่เจอ? แจ้งความต้องการ ↗</a></div>
-      <div class="toolbar"><div class="filter-row" id="filterRow"><button class="chip active" data-category="all">ทั้งหมด</button><button class="chip" data-category="media">ถ่ายภาพ/วิดีโอ</button><button class="chip" data-category="study">เรียน/โปรเจกต์</button><button class="chip" data-category="event">กิจกรรม</button><button class="chip" data-category="fashion">เสื้อผ้า</button><button class="chip" data-category="favorites">♡ ที่บันทึกไว้</button></div><select class="sort-select" id="sortSelect" aria-label="เรียงลำดับ"><option value="recommended">เรียงตามแนะนำ</option><option value="priceAsc">ราคา: ต่ำไปสูง</option><option value="priceDesc">ราคา: สูงไปต่ำ</option></select></div>
+      <div class="section-head"><div><div class="section-kicker">AVAILABLE NEAR CAMPUS</div><h2>ของที่พร้อมให้เช่า</h2><p class="section-desc" id="listingSectionDescription">ค้นหาอุปกรณ์ที่เหมาะกับโปรเจกต์และกิจกรรมของคุณ</p></div><a href="#demand" class="text-link">หาไม่เจอ? แจ้งความต้องการ ↗</a></div>
+      <div class="toolbar"><div class="filter-row" id="filterRow"><button class="chip active" data-category="all" aria-pressed="true">ทั้งหมด</button><button class="chip" data-category="media">ถ่ายภาพ/วิดีโอ</button><button class="chip" data-category="study">เรียน/โปรเจกต์</button><button class="chip" data-category="event">กิจกรรม</button><button class="chip" data-category="fashion">เสื้อผ้า</button><button class="chip" data-category="favorites">♡ ที่บันทึกไว้</button></div><select class="sort-select" id="sortSelect" aria-label="เรียงลำดับ"><option value="recommended">เรียงตามแนะนำ</option><option value="priceAsc">ราคา: ต่ำไปสูง</option><option value="priceDesc">ราคา: สูงไปต่ำ</option></select></div>
       <div class="listing-grid" id="listingGrid" aria-live="polite"></div>
     </section>
 
@@ -106,202 +201,12 @@
     <section class="container trust-strip"><div class="trust-left"><div class="trust-symbol">🛡️</div><div><strong>ความปลอดภัยต้องมาก่อน</strong><p>เดโมนี้ยังไม่ยืนยันตัวตน ไม่รับเงินจริง และไม่มีระบบประกันความเสียหาย โปรดใช้ข้อมูลตัวอย่างเท่านั้น</p></div></div><a class="btn btn-secondary" href="#how">อ่านขั้นตอนการใช้งาน</a></section>
   </main>
 
-  <footer class="footer"><div class="container footer-row"><a class="brand" href="#home"><span class="brand-mark">↗</span><span>campus <em>sharing</em></span></a><div class="footer-note">Campus Sharing Hub · Prototype Demo<br>ข้อมูลรายการและธุรกรรมเก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น ยังไม่ใช่บริการเช่าจริง</div></div></footer>
+  <footer class="footer"><div class="container footer-row"><a class="brand" href="#home"><span class="brand-mark">↗</span><span>campus <em>sharing</em></span></a><div class="footer-note" id="footerNote">Campus Sharing Hub · Prototype Demo<br>ข้อมูลรายการและธุรกรรมเก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น ยังไม่ใช่บริการเช่าจริง</div></div></footer>
   <div class="mobile-bottom"><button class="btn btn-secondary" id="openRequestMobile">＋ แจ้งสิ่งที่ต้องการ</button><button class="btn btn-primary" id="openListingMobile">ลงประกาศ</button></div>
 
   <div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal" id="modalBox"><div class="modal-head"><div><h2 id="modalTitle">หัวข้อ</h2><p id="modalSubtitle"></p></div><button class="close-modal" id="closeModal" aria-label="ปิดหน้าต่าง">×</button></div><div class="modal-content" id="modalContent"></div></div></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-  <script>
-    // ------------------------------------------------------------
-    // Campus Sharing Hub — frontend prototype
-    // ข้อมูลทั้งหมดเป็น mock data และเก็บใน localStorage ของเบราว์เซอร์
-    // ไม่มี backend, login, payment gateway หรือระบบรับประกันสินค้าจริง
-    // ------------------------------------------------------------
-    const STORAGE = {
-      listings: 'csh_listings_v1',
-      requests: 'csh_requests_v1',
-      favorites: 'csh_favorites_v1',
-      bookings: 'csh_bookings_v1'
-    };
-
-    const seedListings = [
-      {id:'demo-cam',title:'กล้อง Mirrorless พร้อมเลนส์คิท',category:'media',categoryLabel:'ถ่ายภาพและวิดีโอ',price:350,deposit:1500,location:'ใกล้คณะนิเทศฯ',owner:'นนท์',initial:'น',rating:'ผู้ให้เช่าตัวอย่าง',condition:'สภาพดี ใช้งานปกติ',description:'กล้องสำหรับถ่ายงานกิจกรรมหรือโปรเจกต์วิดีโอ มาพร้อมเลนส์คิท แบตเตอรี่ 1 ก้อน และสายคล้อง โปรดตรวจอุปกรณ์ร่วมกันตอนรับของ',image:'https://images.unsplash.com/photo-1516035069371-29a1b244cc32?auto=format&fit=crop&w=900&q=85',tag:'เหมาะกับโปรเจกต์',available:true},
-      {id:'demo-mic',title:'ไมโครโฟนไร้สาย 2 ตัว',category:'media',categoryLabel:'ถ่ายภาพและวิดีโอ',price:150,deposit:500,location:'หอพักโซนเหนือ',owner:'แพร',initial:'พ',rating:'ผู้ให้เช่าตัวอย่าง',condition:'สภาพดี มีเคสเก็บ',description:'ไมโครโฟนไร้สายสำหรับสัมภาษณ์ ถ่ายคลิป หรืองานนำเสนอ กรุณาตรวจแบตเตอรี่และอุปกรณ์ในกล่องตอนรับสินค้า',image:'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?auto=format&fit=crop&w=900&q=85',tag:'ราคาประหยัด',available:true},
-      {id:'demo-tripod',title:'ขาตั้งกล้องปรับระดับได้',category:'media',categoryLabel:'ถ่ายภาพและวิดีโอ',price:80,deposit:200,location:'อาคารกิจกรรมนักศึกษา',owner:'บอส',initial:'บ',rating:'ผู้ให้เช่าตัวอย่าง',condition:'มีรอยใช้งานเล็กน้อย',description:'ขาตั้งกล้องน้ำหนักเบา ปรับความสูงได้ มีหัวจับมาตรฐาน เหมาะกับงานถ่ายวิดีโอหรือถ่ายภาพนิ่ง',image:'https://images.unsplash.com/photo-1617005082133-548c4dd27f35?auto=format&fit=crop&w=900&q=85',tag:'ยอดนิยมในเดโม',available:true},
-      {id:'demo-drill',title:'สว่านไฟฟ้าพร้อมดอกพื้นฐาน',category:'study',categoryLabel:'เรียนและโปรเจกต์',price:120,deposit:500,location:'ห้องชมรมเมกเกอร์',owner:'เจ',initial:'จ',rating:'ผู้ให้เช่าตัวอย่าง',condition:'ผ่านการตรวจสภาพในตัวอย่าง',description:'สำหรับงานประกอบชิ้นงานและโปรเจกต์เบื้องต้น ผู้ยืมควรมีความรู้การใช้งานที่ปลอดภัย และต้องคืนพร้อมอุปกรณ์ให้ครบ',image:'https://images.unsplash.com/photo-1504148455328-c376907d081c?auto=format&fit=crop&w=900&q=85',tag:'สำหรับงานประดิษฐ์',available:true},
-      {id:'demo-projector',title:'โปรเจกเตอร์พกพา',category:'event',categoryLabel:'กิจกรรมและอีเวนต์',price:280,deposit:1000,location:'อาคารเรียนรวม',owner:'มิน',initial:'ม',rating:'ผู้ให้เช่าตัวอย่าง',condition:'สภาพดี พร้อมสายไฟ',description:'โปรเจกเตอร์สำหรับนำเสนอผลงานหรือกิจกรรมขนาดเล็ก ควรตรวจสอบพอร์ตและอุปกรณ์เชื่อมต่อที่ต้องใช้ก่อนทำรายการ',image:'https://images.unsplash.com/photo-1492619375914-88005aa9e8fb?auto=format&fit=crop&w=900&q=85',tag:'งานนำเสนอ',available:true},
-      {id:'demo-suit',title:'ชุดสูทสีกรมท่า (ไซซ์ M)',category:'fashion',categoryLabel:'เสื้อผ้าและโอกาสพิเศษ',price:180,deposit:600,location:'หอพักโซนกลาง',owner:'ฟ้า',initial:'ฟ',rating:'ผู้ให้เช่าตัวอย่าง',condition:'ซักทำความสะอาดก่อนส่งมอบ',description:'ชุดสูทสำหรับสัมภาษณ์งาน นำเสนอ หรือกิจกรรมทางการ โปรดสอบถามขนาดและลองความพอดีก่อนยืนยันการจอง',image:'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=900&q=85',tag:'ใช้เฉพาะโอกาส',available:true}
-    ];
-
-    const categoryLabels = {all:'ทุกหมวดหมู่',media:'ถ่ายภาพและวิดีโอ',study:'เรียนและโปรเจกต์',event:'กิจกรรมและอีเวนต์',fashion:'เสื้อผ้าและโอกาสพิเศษ',other:'อื่น ๆ'};
-    const $ = selector => document.querySelector(selector);
-    const $$ = selector => Array.from(document.querySelectorAll(selector));
-    let activeCategory = 'all';
-    let searchTerm = '';
-    let budgetMax = 'all';
-    let sortMode = 'recommended';
-    let toastTimeout;
-
-    function readStore(key, fallback) {
-      try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; }
-      catch (error) { console.warn('อ่าน localStorage ไม่สำเร็จ', error); return fallback; }
-    }
-    function writeStore(key, value) {
-      try { localStorage.setItem(key, JSON.stringify(value)); return true; }
-      catch (error) { showToast('บันทึกข้อมูลไม่สำเร็จ เบราว์เซอร์อาจจำกัดพื้นที่เก็บข้อมูล'); return false; }
-    }
-    function getListings() {
-      const saved = readStore(STORAGE.listings, null);
-      if (!saved) { writeStore(STORAGE.listings, seedListings); return [...seedListings]; }
-      return saved;
-    }
-    function getFavorites() { return readStore(STORAGE.favorites, []); }
-    function formatBaht(n) { return Number(n).toLocaleString('th-TH'); }
-    function formatDateInput(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; }
-    function escapeHTML(value) {
-      return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-    }
-    function showToast(message) {
-      const toast = $('#toast'); toast.textContent = message; toast.classList.add('show');
-      clearTimeout(toastTimeout); toastTimeout = setTimeout(() => toast.classList.remove('show'), 2800);
-    }
-    function openModal(title, subtitle, content, wide=false) {
-      $('#modalTitle').textContent = title; $('#modalSubtitle').textContent = subtitle || '';
-      $('#modalContent').innerHTML = content; $('#modalBox').classList.toggle('wide', wide);
-      $('#modalBackdrop').classList.add('open'); document.body.style.overflow = 'hidden';
-      setTimeout(() => { const first = $('#modalContent input, #modalContent select, #modalContent textarea, #modalContent button'); if(first) first.focus(); }, 30);
-    }
-    function closeModal() { $('#modalBackdrop').classList.remove('open'); document.body.style.overflow = ''; }
-
-    function listingCard(item) {
-      const favorites = getFavorites(); const saved = favorites.includes(item.id);
-      return `<article class="listing-card">
-        <div class="listing-image-wrap" role="button" tabindex="0" data-action="detail" data-id="${escapeHTML(item.id)}" aria-label="ดูรายละเอียด ${escapeHTML(item.title)}">
-          <img class="listing-image" src="${escapeHTML(item.image || '')}" alt="${escapeHTML(item.title)}" loading="lazy" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80'">
-          <span class="tag">${escapeHTML(item.tag || item.categoryLabel || 'รายการใหม่')}</span>
-          <button class="heart ${saved?'saved':''}" data-action="favorite" data-id="${escapeHTML(item.id)}" aria-label="${saved?'นำออกจากรายการที่บันทึก':'บันทึกประกาศนี้'}">${saved?'♥':'♡'}</button>
-        </div>
-        <div class="listing-body"><div class="listing-meta"><span class="owner"><span class="avatar">${escapeHTML(item.initial || 'U')}</span>${escapeHTML(item.owner || 'สมาชิก')}</span><span class="badge-demo">เดโม</span></div>
-          <h3 class="listing-title">${escapeHTML(item.title)}</h3><div class="listing-location">⌖ ${escapeHTML(item.location || 'นัดรับในมหาวิทยาลัย')}</div>
-          <div class="listing-bottom"><div><div class="price">฿${formatBaht(item.price)} <small>/ วัน</small></div><div class="deposit">มัดจำตัวอย่าง ฿${formatBaht(item.deposit || 0)}</div></div><button class="tiny-btn" data-action="detail" data-id="${escapeHTML(item.id)}">ดูรายละเอียด ↗</button></div>
-        </div>
-      </article>`;
-    }
-
-    function renderListings() {
-      let items = getListings();
-      if (activeCategory === 'favorites') { const favorites = getFavorites(); items = items.filter(x => favorites.includes(x.id)); }
-      else if (activeCategory !== 'all') items = items.filter(x => x.category === activeCategory);
-      if (searchTerm) { const q = searchTerm.toLocaleLowerCase('th-TH'); items = items.filter(x => [x.title,x.description,x.categoryLabel,x.location,x.owner].some(v => String(v||'').toLocaleLowerCase('th-TH').includes(q))); }
-      if (budgetMax !== 'all') items = items.filter(x => Number(x.price) <= Number(budgetMax));
-      if (sortMode === 'priceAsc') items.sort((a,b)=>a.price-b.price);
-      if (sortMode === 'priceDesc') items.sort((a,b)=>b.price-a.price);
-      const grid = $('#listingGrid');
-      if (!items.length) {
-        grid.innerHTML = `<div class="empty-state"><strong>ยังไม่พบรายการที่ตรงกัน</strong><span>เปลี่ยนคำค้นหาหรือหมวดหมู่ หรือแจ้งความต้องการเพื่อบันทึกสิ่งที่กำลังหา</span><br><button class="btn btn-primary" style="margin-top:15px" data-action="request">＋ แจ้งความต้องการ</button></div>`;
-      } else grid.innerHTML = items.map(listingCard).join('');
-      $$('#filterRow .chip').forEach(btn => btn.classList.toggle('active', btn.dataset.category === activeCategory));
-      $$('#categoryGrid .category-card').forEach(btn => btn.classList.toggle('active', btn.dataset.category === activeCategory));
-    }
-
-    function listingDetail(id) {
-      const item = getListings().find(x => x.id === id); if(!item) return showToast('ไม่พบรายการนี้');
-      const html = `<div class="detail-layout"><img class="detail-img" src="${escapeHTML(item.image || '')}" alt="${escapeHTML(item.title)}" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80'"><div class="detail-copy"><span class="badge-demo">${escapeHTML(item.categoryLabel || 'รายการตัวอย่าง')}</span><h3 style="margin-top:10px">${escapeHTML(item.title)}</h3><div class="listing-location">⌖ ${escapeHTML(item.location || 'นัดรับในมหาวิทยาลัย')}</div><div class="detail-price">฿${formatBaht(item.price)} <small>/ วัน</small></div><div class="detail-row"><span>เงินมัดจำ (ตัวอย่าง)</span><strong>฿${formatBaht(item.deposit || 0)}</strong></div><div class="detail-row"><span>เจ้าของรายการ</span><strong>${escapeHTML(item.owner || 'สมาชิก')}</strong></div><div class="detail-row"><span>สภาพของ</span><strong>${escapeHTML(item.condition || 'โปรดตรวจสอบก่อนรับ')}</strong></div><p>${escapeHTML(item.description || 'ไม่มีรายละเอียดเพิ่มเติม')}</p><button class="btn btn-primary" style="width:100%;margin-top:8px" data-action="book" data-id="${escapeHTML(item.id)}">ขอจองรายการนี้ ↗</button><p class="form-footnote">การกดจองเป็นเพียงการจำลอง ไม่มีการชำระเงินจริง โปรดยืนยันสภาพของและข้อตกลงก่อนเช่าจริง</p></div></div>`;
-      openModal('รายละเอียดรายการ','ตรวจสอบข้อมูลก่อนส่งคำขอจอง',html,true);
-    }
-
-    function openBooking(id) {
-      const item = getListings().find(x=>x.id===id); if(!item) return showToast('ไม่พบรายการนี้');
-      const today = new Date(); today.setDate(today.getDate()+1); const minDate = formatDateInput(today);
-      const today2 = new Date(today); today2.setDate(today2.getDate()+1); const nextDate = formatDateInput(today2);
-      openModal('ส่งคำขอจอง',`รายการ: ${item.title}`,`<form id="bookingForm" data-id="${escapeHTML(item.id)}"><div class="form-grid">
-        <div class="form-field"><label for="bookStart">วันรับของ</label><input type="date" id="bookStart" name="start" min="${minDate}" value="${minDate}" required></div>
-        <div class="form-field"><label for="bookEnd">วันคืนของ</label><input type="date" id="bookEnd" name="end" min="${minDate}" value="${nextDate}" required></div>
-        <div class="form-field full"><label for="bookPlace">จุดนัดรับที่สะดวก</label><input id="bookPlace" name="place" placeholder="เช่น หน้าอาคารเรียนรวม" required maxlength="100"></div>
-        <div class="form-field full"><label for="bookNote">ข้อความถึงผู้ปล่อยเช่า <span class="hint">(ไม่บังคับ)</span></label><textarea id="bookNote" name="note" placeholder="เช่น ขอเช็กอุปกรณ์ก่อนรับของ" maxlength="300"></textarea></div>
-      </div><div class="booking-total"><div><strong>ค่าเช่าต่อวัน</strong><div class="hint">฿${formatBaht(item.price)} / วัน · มัดจำตัวอย่าง ฿${formatBaht(item.deposit||0)}</div></div><strong id="bookingEstimate">คำนวณหลังเลือกวัน</strong></div><p class="form-footnote">เดโมนี้ยังไม่ได้ตรวจสอบว่าวันที่เลือกว่างจริง และไม่มีการส่งคำขอไปยังเจ้าของรายการ</p><div class="form-actions"><button type="button" class="btn btn-secondary" data-action="back-detail" data-id="${escapeHTML(item.id)}">กลับ</button><button type="submit" class="btn btn-primary">ยืนยันคำขอจำลอง</button></div></form>`);
-      const form = $('#bookingForm');
-      const updateEstimate = () => {const start=new Date(form.start.value+'T00:00:00');const end=new Date(form.end.value+'T00:00:00');const days=Math.max(0,Math.round((end-start)/86400000)+1);$('#bookingEstimate').textContent=days>0?'฿'+formatBaht(days*item.price):'เลือกวันให้ถูกต้อง';};
-      form.start.addEventListener('change',()=>{form.end.min=form.start.value;if(form.end.value<form.start.value)form.end.value=form.start.value;updateEstimate();});form.end.addEventListener('change',updateEstimate);updateEstimate();
-    }
-
-    function openRequestForm() {
-      const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); const minDate=formatDateInput(tomorrow);
-      openModal('แจ้งสิ่งที่ต้องการ','บอกความต้องการจริง เพื่อใช้ทดสอบว่ามีของที่ตรงกันหรือไม่',`<form id="requestForm"><div class="form-grid">
-        <div class="form-field full"><label for="requestTitle">ต้องการเช่าอะไร? *</label><input id="requestTitle" name="title" required maxlength="100" placeholder="เช่น ไมโครโฟนไร้สายสำหรับถ่ายวิดีโอ"></div>
-        <div class="form-field"><label for="requestCategory">หมวดหมู่ *</label><select id="requestCategory" name="category" required><option value="media">ถ่ายภาพและวิดีโอ</option><option value="study">เรียนและโปรเจกต์</option><option value="event">กิจกรรมและอีเวนต์</option><option value="fashion">เสื้อผ้าและโอกาสพิเศษ</option><option value="other">อื่น ๆ</option></select></div>
-        <div class="form-field"><label for="requestBudget">งบประมาณต่อวัน (บาท) *</label><input id="requestBudget" name="budget" type="number" min="1" max="100000" required placeholder="เช่น 150"></div>
-        <div class="form-field"><label for="requestStart">วันที่ต้องการใช้ *</label><input id="requestStart" name="date" type="date" min="${minDate}" required value="${minDate}"></div>
-        <div class="form-field"><label for="requestDuration">ระยะเวลา *</label><select id="requestDuration" name="duration"><option value="1 วัน">1 วัน</option><option value="2 วัน">2 วัน</option><option value="3 วัน">3 วัน</option><option value="4–7 วัน">4–7 วัน</option><option value="มากกว่า 1 สัปดาห์">มากกว่า 1 สัปดาห์</option></select></div>
-        <div class="form-field full"><label for="requestPickup">โซนรับของที่สะดวก *</label><input id="requestPickup" name="pickup" required maxlength="100" placeholder="เช่น ใกล้คณะวิศวกรรมศาสตร์"></div>
-        <div class="form-field full"><label for="requestContact">ชื่อเล่นหรือช่องทางติดต่อสำหรับเดโม <span class="hint">(ไม่บังคับ)</span></label><input id="requestContact" name="contact" maxlength="100" placeholder="ไม่ควรใส่ข้อมูลส่วนตัวที่สำคัญ"></div>
-      </div><p class="form-footnote">คำขอจะถูกบันทึกในเบราว์เซอร์เครื่องนี้เท่านั้น ไม่มีการส่งแจ้งเตือนให้ผู้ปล่อยเช่าจริง</p><div class="form-actions"><button type="button" class="btn btn-secondary" data-action="close">ยกเลิก</button><button type="submit" class="btn btn-primary">บันทึกความต้องการ</button></div></form>`);
-    }
-
-    function openListingForm() {
-      openModal('ลงประกาศปล่อยเช่า','เพิ่มรายการตัวอย่างเพื่อดูว่าหน้าประกาศทำงานอย่างไร',`<form id="listingForm"><div class="form-grid">
-        <div class="form-field full"><label for="newTitle">ชื่อสิ่งของ *</label><input id="newTitle" name="title" required maxlength="100" placeholder="เช่น ขาตั้งกล้องพร้อมหัวจับ"></div>
-        <div class="form-field"><label for="newCategory">หมวดหมู่ *</label><select id="newCategory" name="category"><option value="media">ถ่ายภาพและวิดีโอ</option><option value="study">เรียนและโปรเจกต์</option><option value="event">กิจกรรมและอีเวนต์</option><option value="fashion">เสื้อผ้าและโอกาสพิเศษ</option><option value="other">อื่น ๆ</option></select></div>
-        <div class="form-field"><label for="newPrice">ค่าเช่าต่อวัน (บาท) *</label><input id="newPrice" name="price" type="number" min="1" max="100000" required placeholder="เช่น 100"></div>
-        <div class="form-field"><label for="newDeposit">เงินมัดจำ (บาท)</label><input id="newDeposit" name="deposit" type="number" min="0" max="1000000" value="0" required></div>
-        <div class="form-field"><label for="newOwner">ชื่อเล่น *</label><input id="newOwner" name="owner" required maxlength="30" placeholder="เช่น มายด์"></div>
-        <div class="form-field full"><label for="newLocation">จุดนัดรับ *</label><input id="newLocation" name="location" required maxlength="100" placeholder="เช่น อาคารกิจกรรมนักศึกษา"></div>
-        <div class="form-field full"><label for="newCondition">สภาพของ *</label><input id="newCondition" name="condition" required maxlength="120" placeholder="เช่น ใช้งานปกติ มีรอยเล็กน้อย"></div>
-        <div class="form-field full"><label for="newDescription">รายละเอียด / อุปกรณ์ที่ให้มาด้วย *</label><textarea id="newDescription" name="description" required maxlength="500" placeholder="แจ้งตำหนิ เงื่อนไข และสิ่งที่ต้องตรวจสอบก่อนรับของ"></textarea></div>
-        <div class="form-field full"><label for="newImage">ลิงก์รูปภาพ (ไม่บังคับ)</label><input id="newImage" name="image" type="url" placeholder="https://..."><span class="hint">ใช้ลิงก์รูปภาพที่เข้าถึงได้สาธารณะ หลีกเลี่ยงการใส่ข้อมูลส่วนบุคคลในรูป</span></div>
-      </div><p class="form-footnote">ประกาศที่สร้างจะปรากฏบนเว็บนี้ในเบราว์เซอร์เครื่องนี้เท่านั้น ยังไม่มีระบบตรวจสอบเจ้าของหรือรับชำระเงิน</p><div class="form-actions"><button type="button" class="btn btn-secondary" data-action="close">ยกเลิก</button><button type="submit" class="btn btn-primary">เพิ่มรายการตัวอย่าง</button></div></form>`);
-    }
-
-    function handleRequestSubmit(form) {
-      const data = Object.fromEntries(new FormData(form).entries());
-      if(!data.title.trim() || !data.date || Number(data.budget)<=0 || !data.pickup.trim()) return showToast('กรุณากรอกข้อมูลที่จำเป็นให้ครบ');
-      const requests=readStore(STORAGE.requests,[]); requests.unshift({...data,id:'req-'+Date.now(),createdAt:new Date().toISOString(),status:'บันทึกในเดโม'}); writeStore(STORAGE.requests,requests); closeModal(); showToast('บันทึกคำขอในเครื่องนี้แล้ว — ยังไม่มีการส่งให้ผู้ปล่อยเช่า');
-    }
-    function handleListingSubmit(form) {
-      const data=Object.fromEntries(new FormData(form).entries());
-      if(!data.title.trim()||!data.owner.trim()||!data.location.trim()||Number(data.price)<=0) return showToast('กรุณาตรวจสอบชื่อ ราคา และจุดนัดรับ');
-      const id='user-'+Date.now(); const newItem={...data,id,price:Number(data.price),deposit:Number(data.deposit||0),categoryLabel:categoryLabels[data.category]||'อื่น ๆ',initial:data.owner.trim().slice(0,1),tag:'ประกาศใหม่ · เดโม',image:data.image||'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80',available:true};
-      const all=getListings();all.unshift(newItem);writeStore(STORAGE.listings,all);activeCategory='all';searchTerm='';$('#searchInput').value='';$('#categorySelect').value='all';budgetMax='all';$('#budgetSelect').value='all';renderListings();closeModal();$('#explore').scrollIntoView({behavior:'smooth'});showToast('เพิ่มประกาศตัวอย่างแล้ว รายการนี้เห็นได้ในเบราว์เซอร์เครื่องนี้');
-    }
-    function handleBookingSubmit(form) {
-      const data=Object.fromEntries(new FormData(form).entries()); const item=getListings().find(x=>x.id===form.dataset.id); if(!item)return;
-      if(!data.start||!data.end||data.end<data.start)return showToast('วันที่คืนต้องไม่อยู่ก่อนวันที่รับของ');
-      const start=new Date(data.start+'T00:00:00');const end=new Date(data.end+'T00:00:00');const days=Math.round((end-start)/86400000)+1;const bookings=readStore(STORAGE.bookings,[]);bookings.unshift({id:'book-'+Date.now(),listingId:item.id,title:item.title,start:data.start,end:data.end,days,place:data.place,note:data.note||'',estimate:days*item.price,status:'คำขอจำลอง',createdAt:new Date().toISOString()});writeStore(STORAGE.bookings,bookings);closeModal();showToast(`บันทึกคำขอจำลองแล้ว: ${days} วัน รวมค่าเช่าตัวอย่าง ฿${formatBaht(days*item.price)} (ยังไม่ชำระเงินจริง)`);
-    }
-    function toggleFavorite(id) {const fav=getFavorites();const next=fav.includes(id)?fav.filter(x=>x!==id):[...fav,id];writeStore(STORAGE.favorites,next);renderListings();showToast(next.includes(id)?'บันทึกไว้แล้ว':'นำออกจากรายการที่บันทึกแล้ว');}
-
-    // Click delegation keeps buttons working after dynamic rendering.
-    document.addEventListener('click', event => {
-      const actionEl=event.target.closest('[data-action]');
-      if(actionEl){const action=actionEl.dataset.action,id=actionEl.dataset.id;
-        if(action==='detail') listingDetail(id);
-        else if(action==='favorite'){event.stopPropagation();toggleFavorite(id);}
-        else if(action==='book') openBooking(id);
-        else if(action==='request') openRequestForm();
-        else if(action==='close') closeModal();
-        else if(action==='back-detail') listingDetail(id);
-      }
-    });
-    document.addEventListener('submit',event=>{
-      if(event.target.id==='searchForm'){event.preventDefault();searchTerm=$('#searchInput').value.trim();activeCategory=$('#categorySelect').value;budgetMax=$('#budgetSelect').value;renderListings();$('#explore').scrollIntoView({behavior:'smooth'});}
-      if(event.target.id==='requestForm'){event.preventDefault();handleRequestSubmit(event.target);}
-      if(event.target.id==='listingForm'){event.preventDefault();handleListingSubmit(event.target);}
-      if(event.target.id==='bookingForm'){event.preventDefault();handleBookingSubmit(event.target);}
-    });
-    $('#filterRow').addEventListener('click',e=>{const btn=e.target.closest('[data-category]');if(!btn)return;activeCategory=btn.dataset.category;renderListings();});
-    $('#categoryGrid').addEventListener('click',e=>{const btn=e.target.closest('[data-category]');if(!btn)return;activeCategory=btn.dataset.category;$('#categorySelect').value=activeCategory;renderListings();$('#explore').scrollIntoView({behavior:'smooth'});});
-    $('#sortSelect').addEventListener('change',e=>{sortMode=e.target.value;renderListings();});
-    $('#closeModal').addEventListener('click',closeModal);
-    $('#modalBackdrop').addEventListener('click',e=>{if(e.target===$('#modalBackdrop'))closeModal();});
-    document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
-    ['#openRequestTop','#openRequestHero','#openRequestMain','#openRequestMobile'].forEach(sel=>$(sel).addEventListener('click',openRequestForm));
-    ['#openListingTop','#openListingMobile'].forEach(sel=>$(sel).addEventListener('click',openListingForm));
-    $('#mobileMenu').addEventListener('click',()=>{openModal('เมนู','เลือกส่วนที่ต้องการไป',`<div style="display:grid;gap:10px"><a class="btn btn-secondary" href="#explore" data-action="close">ค้นหาของ</a><a class="btn btn-secondary" href="#demand" data-action="close">แจ้งสิ่งที่ต้องการ</a><a class="btn btn-secondary" href="#how" data-action="close">วิธีใช้งาน</a><button class="btn btn-primary" data-action="close">ปิดเมนู</button></div>`);});
-
-    // Make seed dataset only on first load. Keep user-created listings across refreshes.
-    getListings();
-    renderListings();
-  </script>
+  <script type="module" src="/src/main.js"></script>
 </body>
 </html>
