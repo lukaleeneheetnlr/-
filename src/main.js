@@ -8,8 +8,12 @@ const supabase = SUPABASE_URL && SUPABASE_KEY
   : null;
 const liveMode = Boolean(supabase);
 let currentSession = null;
+let currentProfile = null;
+let currentIsAdmin = false;
 let listingCache = [];
 let accountTab = 'my-listings';
+const LISTING_IMAGE_BUCKET = 'listing-images';
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const STORAGE = { listings:'csh_listings_v1', requests:'csh_requests_v1', favorites:'csh_favorites_v1', bookings:'csh_bookings_v1' };
 
 const seedListings = [
@@ -45,6 +49,36 @@ function getListings() {
   return saved;
 }
 function getFavorites() { return readStore(STORAGE.favorites, []); }
+async function loadCurrentProfile() {
+  currentProfile = null;
+  currentIsAdmin = false;
+  if (!liveMode || !currentSession?.user) { updateAuthButtons(); return; }
+  const { data, error } = await supabase.from('profiles')
+    .select('id,full_name,university,is_admin')
+    .eq('id', currentSession.user.id).maybeSingle();
+  if (error) {
+    console.warn('โหลดโปรไฟล์/สิทธิ์ไม่สำเร็จ ตรวจ migration ของ Supabase', error);
+  } else {
+    currentProfile = data || null;
+    currentIsAdmin = Boolean(data?.is_admin);
+  }
+  updateAuthButtons();
+}
+async function uploadListingImage(file) {
+  if (!file || !file.size) return { url: null, path: null };
+  if (!liveMode || !supabase) throw new Error('ต้องตั้งค่า Supabase ก่อนอัปโหลดรูป');
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowedTypes.includes(file.type)) throw new Error('รองรับเฉพาะรูป JPG, PNG, WebP หรือ GIF');
+  if (file.size > MAX_IMAGE_BYTES) throw new Error('รูปต้องมีขนาดไม่เกิน 5 MB');
+  const extension = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' })[file.type];
+  const path = `${currentSession.user.id}/${crypto.randomUUID()}.${extension}`;
+  const { error } = await supabase.storage.from(LISTING_IMAGE_BUCKET).upload(path, file, {
+    cacheControl: '3600', upsert: false, contentType: file.type
+  });
+  if (error) throw error;
+  const { data } = supabase.storage.from(LISTING_IMAGE_BUCKET).getPublicUrl(path);
+  return { url: data.publicUrl, path };
+}
 function formatBaht(n) { return Number(n || 0).toLocaleString('th-TH'); }
 function formatDateInput(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; }
 function formatDateThai(value) { if (!value) return '-'; const d = new Date(`${value}T00:00:00`); return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'numeric'}); }
@@ -92,7 +126,7 @@ function fromDbListing(row) {
     id: row.id, owner_id: row.owner_id, title: row.title, category: row.category,
     categoryLabel: categoryLabels[row.category] || 'อื่น ๆ', price: Number(row.price_per_day), deposit: Number(row.deposit || 0),
     location: row.location, owner, initial: owner.slice(0,1), condition: row.condition,
-    description: row.description, image: row.image_url || 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80',
+    description: row.description, image: row.image_url || 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80', image_path: row.image_path || null,
     tag: row.is_available ? 'สมาชิกลงประกาศ' : 'ไม่พร้อมให้เช่า', available: row.is_available,
     isReal: true, created_at: row.created_at
   };
@@ -116,7 +150,7 @@ function updateAuthButtons() {
   $('#openAuthTop').hidden = signedIn;
   $('#openAccountTop').hidden = !signedIn;
   $('#openAuthTop').textContent = 'เข้าสู่ระบบ';
-  $('#openAccountTop').textContent = signedIn ? `บัญชี: ${currentSession.user.user_metadata?.full_name || currentSession.user.email?.split('@')[0] || 'ของฉัน'}` : 'บัญชีของฉัน';
+  $('#openAccountTop').textContent = signedIn ? (currentIsAdmin ? 'แอดมิน' : `บัญชี: ${currentProfile?.full_name || currentSession.user.user_metadata?.full_name || currentSession.user.email?.split('@')[0] || 'ของฉัน'}`) : 'บัญชีของฉัน';
 }
 
 function listingCard(item) {
@@ -196,7 +230,7 @@ function openListingForm() {
     <div class="form-field full"><label for="newLocation">จุดนัดรับ *</label><input id="newLocation" name="location" required maxlength="100" placeholder="เช่น อาคารกิจกรรมนักศึกษา"></div>
     <div class="form-field full"><label for="newCondition">สภาพของ *</label><input id="newCondition" name="condition" required maxlength="120" placeholder="เช่น ใช้งานปกติ มีรอยเล็กน้อย"></div>
     <div class="form-field full"><label for="newDescription">รายละเอียด / อุปกรณ์ที่ให้มาด้วย *</label><textarea id="newDescription" name="description" required maxlength="500" placeholder="แจ้งตำหนิ เงื่อนไข และสิ่งที่ต้องตรวจสอบก่อนรับของ"></textarea></div>
-    <div class="form-field full"><label for="newImage">ลิงก์รูปภาพ (ไม่บังคับ)</label><input id="newImage" name="image" type="url" placeholder="https://..."><span class="hint">ใช้ลิงก์รูปภาพที่เข้าถึงได้สาธารณะ</span></div>
+    <div class="form-field full"><label for="newImage">อัปโหลดรูปภาพ (ไม่บังคับ)</label><input id="newImage" name="image" type="file" accept="image/jpeg,image/png,image/webp,image/gif" ${liveMode?'':'disabled'}><span class="hint">ไฟล์ JPG, PNG, WebP หรือ GIF · ขนาดไม่เกิน 5 MB · อัปโหลดเก็บไว้ใน Supabase Storage</span>${liveMode?'':'<span class="hint">ตั้งค่า Supabase ใน .env.local ก่อนใช้งานอัปโหลด</span>'}</div>
   </div><p class="form-footnote">ผู้ลงประกาศรับผิดชอบข้อมูล ราคา เงื่อนไข และความปลอดภัยในการส่งมอบสินค้า</p><div class="form-actions"><button type="button" class="btn btn-secondary" data-action="close">ยกเลิก</button><button type="submit" class="btn btn-primary">${liveMode?'บันทึกประกาศ':'เพิ่มรายการตัวอย่าง'}</button></div></form>`);
 }
 function handleRequestSubmit(form) {
@@ -206,18 +240,29 @@ function handleRequestSubmit(form) {
 }
 async function handleListingSubmit(form) {
   const data=Object.fromEntries(new FormData(form).entries());
+  const imageFile = data.image instanceof File && data.image.size ? data.image : null;
   if(!data.title?.trim()||!data.location?.trim()||!data.condition?.trim()||!data.description?.trim()||Number(data.price)<=0) return showToast('กรุณาตรวจสอบชื่อ ราคา รายละเอียด และจุดนัดรับ');
+  if (imageFile && !liveMode) return showToast('การอัปโหลดรูปถาวรต้องเชื่อมต่อ Supabase ก่อน');
   if (liveMode) {
     if (!currentSession?.user) return openAuthModal('login');
-    const payload = { owner_id: currentSession.user.id, title:data.title.trim(), category:data.category, price_per_day:Number(data.price), deposit:Number(data.deposit||0), location:data.location.trim(), condition:data.condition.trim(), description:data.description.trim(), image_url:data.image?.trim() || null, is_available:true };
-    const { error } = await supabase.from('listings').insert(payload);
-    if (error) { showToast('บันทึกประกาศไม่สำเร็จ: '+friendlyError(error)); return; }
+    let uploaded = { url: null, path: null };
+    try {
+      if (imageFile) uploaded = await uploadListingImage(imageFile);
+      const payload = { owner_id: currentSession.user.id, title:data.title.trim(), category:data.category, price_per_day:Number(data.price), deposit:Number(data.deposit||0), location:data.location.trim(), condition:data.condition.trim(), description:data.description.trim(), image_url:uploaded.url, image_path:uploaded.path, is_available:true };
+      const { error } = await supabase.from('listings').insert(payload);
+      if (error) {
+        if (uploaded.path) await supabase.storage.from(LISTING_IMAGE_BUCKET).remove([uploaded.path]);
+        showToast('บันทึกประกาศไม่สำเร็จ: '+friendlyError(error)); return;
+      }
+    } catch (error) {
+      showToast('อัปโหลด/บันทึกรูปไม่สำเร็จ: '+friendlyError(error)); return;
+    }
     await refreshListings();
     activeCategory='all'; searchTerm=''; $('#searchInput').value=''; $('#categorySelect').value='all'; budgetMax='all'; $('#budgetSelect').value='all';
     renderListings(); closeModal(); $('#explore').scrollIntoView({behavior:'smooth'}); showToast('ลงประกาศสำเร็จ ทุกคนสามารถค้นหารายการนี้ได้แล้ว'); return;
   }
   if(!data.owner?.trim()) return showToast('กรุณากรอกชื่อผู้ให้เช่า');
-  const newItem={...data,id:'user-'+Date.now(),price:Number(data.price),deposit:Number(data.deposit||0),categoryLabel:categoryLabels[data.category]||'อื่น ๆ',initial:data.owner.trim().slice(0,1),tag:'ประกาศใหม่ · เดโม',image:data.image||'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80',available:true};
+  const newItem={...data,image:undefined,id:'user-'+Date.now(),price:Number(data.price),deposit:Number(data.deposit||0),categoryLabel:categoryLabels[data.category]||'อื่น ๆ',initial:data.owner.trim().slice(0,1),tag:'ประกาศใหม่ · เดโม',image:'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80',available:true};
   const all=getListings();all.unshift(newItem);writeStore(STORAGE.listings,all);activeCategory='all';searchTerm='';$('#searchInput').value='';$('#categorySelect').value='all';budgetMax='all';$('#budgetSelect').value='all';renderListings();closeModal();$('#explore').scrollIntoView({behavior:'smooth'});showToast('เพิ่มประกาศตัวอย่างในเบราว์เซอร์นี้แล้ว');
 }
 async function handleBookingSubmit(form) {
@@ -264,11 +309,11 @@ async function handleAuthSubmit(form) {
       if (!result.data.session) {
         closeModal(); showToast('สมัครแล้ว กรุณาตรวจอีเมลและกดยืนยัน ก่อนเข้าสู่ระบบ'); return;
       }
-      currentSession = result.data.session; updateAuthButtons(); closeModal(); showToast('สมัครสมาชิกสำเร็จ'); await refreshListings(); return;
+      currentSession = result.data.session; await loadCurrentProfile(); closeModal(); showToast('สมัครสมาชิกสำเร็จ'); await refreshListings(); return;
     }
     result = await supabase.auth.signInWithPassword({email:data.email.trim(),password:data.password});
     if (result.error) throw result.error;
-    currentSession = result.data.session; updateAuthButtons(); closeModal(); showToast('เข้าสู่ระบบสำเร็จ'); await refreshListings();
+    currentSession = result.data.session; await loadCurrentProfile(); closeModal(); showToast('เข้าสู่ระบบสำเร็จ'); await refreshListings();
   } catch (error) {
     const target = $('#authError'); if (target) target.textContent = friendlyError(error);
   } finally {
@@ -278,16 +323,64 @@ async function handleAuthSubmit(form) {
 
 function statusText(status) { return ({pending:'รออนุมัติ',approved:'อนุมัติแล้ว',rejected:'ปฏิเสธ',cancelled:'ยกเลิก',completed:'เสร็จสิ้น'})[status] || status; }
 function accountShell(tab) {
-  const tabs = [['my-listings','ประกาศของฉัน'],['as-renter','รายการที่ฉันจอง'],['as-owner','คำขอที่ได้รับ']];
+  const tabs = currentIsAdmin
+    ? [['admin-overview','ภาพรวมแอดมิน'],['admin-listings','ประกาศทั้งหมด'],['admin-bookings','การจองทั้งหมด'],['admin-users','สมาชิกทั้งหมด'],['my-listings','ประกาศของฉัน'],['as-renter','รายการที่ฉันจอง'],['as-owner','คำขอที่ได้รับ']]
+    : [['my-listings','ประกาศของฉัน'],['as-renter','รายการที่ฉันจอง'],['as-owner','คำขอที่ได้รับ']];
   return `<div class="account-tabs">${tabs.map(([key,label])=>`<button class="account-tab ${tab===key?'active':''}" data-action="account-tab" data-tab="${key}" aria-pressed="${tab===key}">${label}</button>`).join('')}<button class="account-tab" data-action="logout">ออกจากระบบ</button></div><div id="accountContent"><div class="account-empty">กำลังโหลดข้อมูล…</div></div>`;
 }
-function openAccountDashboard(tab='my-listings') {
+function openAccountDashboard(tab=currentIsAdmin?'admin-overview':'my-listings') {
   if (!liveMode) return openAuthModal('login');
   if (!currentSession?.user) return openAuthModal('login');
   accountTab = tab;
-  const name = currentSession.user.user_metadata?.full_name || currentSession.user.email || 'สมาชิก';
-  openModal('บัญชีของฉัน', `สวัสดี ${name} · จัดการประกาศและคำขอจอง`, accountShell(tab), true);
+  const name = currentProfile?.full_name || currentSession.user.user_metadata?.full_name || currentSession.user.email || 'สมาชิก';
+  openModal(currentIsAdmin ? 'แผงควบคุมแอดมิน' : 'บัญชีของฉัน', `สวัสดี ${name} · ${currentIsAdmin?'จัดการข้อมูลแพลตฟอร์ม':'จัดการประกาศและคำขอจอง'}`, accountShell(tab), true);
   renderAccountTab(tab);
+}
+async function renderAdminTab(tab, out) {
+  if (!currentIsAdmin) { out.innerHTML='<div class="account-empty">บัญชีนี้ไม่มีสิทธิ์แอดมิน</div>'; return; }
+  if (tab === 'admin-overview') {
+    const [users, listings, bookings] = await Promise.all([
+      supabase.from('profiles').select('id',{count:'exact',head:true}),
+      supabase.from('listings').select('id',{count:'exact',head:true}),
+      supabase.from('bookings').select('id',{count:'exact',head:true})
+    ]);
+    for (const result of [users,listings,bookings]) if (result.error) throw result.error;
+    out.innerHTML = `<div class="admin-stat-grid"><div class="admin-stat"><span>สมาชิก</span><strong>${users.count||0}</strong></div><div class="admin-stat"><span>ประกาศทั้งหมด</span><strong>${listings.count||0}</strong></div><div class="admin-stat"><span>คำขอจองทั้งหมด</span><strong>${bookings.count||0}</strong></div></div><div class="account-row admin-welcome"><div><h3>ยินดีต้อนรับผู้ดูแลระบบ</h3><p>บัญชีแอดมินสามารถตรวจสอบสมาชิก ประกาศ และคำขอจองทั้งหมดที่บันทึกไว้ใน Supabase ได้</p><p>สิทธิ์ถูกตรวจสอบจากฐานข้อมูล ไม่ได้อาศัยชื่อที่แสดงบนหน้าเว็บ</p></div></div><div class="admin-shortcuts"><button class="btn btn-secondary" data-action="account-tab" data-tab="admin-listings">จัดการประกาศทั้งหมด</button><button class="btn btn-secondary" data-action="account-tab" data-tab="admin-bookings">ตรวจสอบการจอง</button><button class="btn btn-secondary" data-action="account-tab" data-tab="admin-users">ดูข้อมูลสมาชิก</button></div>`;
+    return;
+  }
+  if (tab === 'admin-listings') {
+    const {data,error}=await supabase.from('listings').select('*, profiles!listings_owner_id_fkey(full_name)').order('created_at',{ascending:false});
+    if(error) throw error;
+    if(!data?.length){out.innerHTML='<div class="account-empty">ยังไม่มีประกาศในระบบ</div>';return;}
+    out.innerHTML=`<div class="account-list">${data.map(row=>`<div class="account-row"><div><h3>${escapeHTML(row.title)}</h3><p>ผู้ลงประกาศ: ${escapeHTML(row.profiles?.full_name||'สมาชิก')} · ${escapeHTML(row.location)} · ฿${formatBaht(row.price_per_day)} / วัน</p><p><span class="status-pill ${row.is_available?'approved':'cancelled'}">${row.is_available?'เปิดให้เช่า':'ซ่อนประกาศ'}</span> · ${formatDateThai(String(row.created_at||'').slice(0,10))}</p></div><div class="account-actions"><button class="btn btn-secondary" data-action="toggle-listing" data-id="${row.id}" data-available="${row.is_available}">${row.is_available?'ซ่อนประกาศ':'เปิดให้เช่า'}</button><button class="btn btn-danger" data-action="delete-listing" data-id="${row.id}">ลบ</button></div></div>`).join('')}</div>`;
+    return;
+  }
+  if (tab === 'admin-users') {
+    const {data,error}=await supabase.rpc('admin_list_users');
+    if(error) throw error;
+    if(!data?.length){out.innerHTML='<div class="account-empty">ยังไม่พบข้อมูลสมาชิก</div>';return;}
+    out.innerHTML=`<div class="account-list">${data.map(user=>`<div class="account-row"><div><h3>${escapeHTML(user.full_name||'สมาชิก')}</h3><p>อีเมล: ${escapeHTML(user.email||'-')}</p><p>สถานศึกษา: ${escapeHTML(user.university||'-')}</p><p>สมัครเมื่อ ${formatDateThai(String(user.created_at||'').slice(0,10))} · ${user.is_admin?'<span class="status-pill approved">แอดมิน</span>':'<span class="status-pill">สมาชิก</span>'}</p></div></div>`).join('')}</div>`;
+    return;
+  }
+  if (tab === 'admin-bookings') {
+    const {data:rows,error}=await supabase.from('bookings').select('*').order('created_at',{ascending:false});
+    if(error) throw error;
+    if(!rows?.length){out.innerHTML='<div class="account-empty">ยังไม่มีคำขอจองในระบบ</div>';return;}
+    const itemIds=[...new Set(rows.map(row=>row.listing_id))];
+    const userIds=[...new Set(rows.map(row=>row.renter_id))];
+    const [{data:listings,error:listError},{data:profiles,error:profilesError},{data:users,error:usersError}]=await Promise.all([
+      supabase.from('listings').select('id,title,owner_id,location').in('id',itemIds),
+      supabase.from('profiles').select('id,full_name').in('id',userIds),
+      supabase.rpc('admin_list_users')
+    ]);
+    if(listError) throw listError; if(profilesError) throw profilesError; if(usersError) throw usersError;
+    const itemMap=Object.fromEntries((listings||[]).map(item=>[item.id,item]));
+    const profileMap=Object.fromEntries((profiles||[]).map(user=>[user.id,user.full_name]));
+    const userMap=Object.fromEntries((users||[]).map(user=>[user.user_id,user]));
+    out.innerHTML=`<div class="account-list">${rows.map(row=>{const item=itemMap[row.listing_id]||{};const renter=userMap[row.renter_id]||{};return `<div class="account-row"><div><h3>${escapeHTML(item.title||'ประกาศที่ถูกลบ')}</h3><p>ผู้จอง: ${escapeHTML(profileMap[row.renter_id]||renter.full_name||'สมาชิก')} · ${escapeHTML(renter.email||'-')}</p><p>วันเช่า: ${formatDateThai(row.start_date)} – ${formatDateThai(row.end_date)} · จุดรับ: ${escapeHTML(row.pickup_location||'-')}</p><p>ค่าเช่ารวม ฿${formatBaht(row.total_price)} · <span class="status-pill ${escapeHTML(row.status)}">${statusText(row.status)}</span></p>${row.note?`<p>หมายเหตุ: ${escapeHTML(row.note)}</p>`:''}</div><div class="account-actions">${row.status==='pending'?`<button class="btn btn-primary" data-action="booking-approve" data-id="${row.id}">อนุมัติ</button><button class="btn btn-danger" data-action="booking-reject" data-id="${row.id}">ปฏิเสธ</button>`:''}</div></div>`}).join('')}</div>`;
+    return;
+  }
+  out.innerHTML='<div class="account-empty">ไม่พบหน้าจัดการที่ต้องการ</div>';
 }
 async function renderAccountTab(tab) {
   if (!liveMode || !currentSession?.user || !$('#accountContent')) return;
@@ -296,6 +389,7 @@ async function renderAccountTab(tab) {
   const out = $('#accountContent'); out.innerHTML='<div class="account-empty">กำลังโหลดข้อมูล…</div>';
   const uid = currentSession.user.id;
   try {
+    if (tab.startsWith('admin-')) { await renderAdminTab(tab, out); return; }
     if (tab === 'my-listings') {
       const {data,error}=await supabase.from('listings').select('*').eq('owner_id',uid).order('created_at',{ascending:false});
       if(error) throw error;
@@ -337,7 +431,7 @@ async function processBookingDecision(id,status) {
 async function logout() {
   const {error}=await supabase.auth.signOut();
   if(error) return showToast('ออกจากระบบไม่สำเร็จ: '+friendlyError(error));
-  currentSession=null; updateAuthButtons(); closeModal(); showToast('ออกจากระบบแล้ว');
+  currentSession=null; currentProfile=null; currentIsAdmin=false; updateAuthButtons(); closeModal(); showToast('ออกจากระบบแล้ว');
 }
 async function manageListing(id,action,currentAvailable) {
   if(!currentSession?.user) return openAuthModal('login');
@@ -347,12 +441,21 @@ async function manageListing(id,action,currentAvailable) {
     const check=await supabase.from('bookings').select('id',{count:'exact',head:true}).eq('listing_id',id);
     if(check.error) return showToast('ตรวจสอบประวัติการจองไม่สำเร็จ: '+friendlyError(check.error));
     if((check.count||0)>0) return showToast('รายการนี้มีประวัติการจอง จึงลบไม่ได้เพื่อเก็บประวัติไว้ คุณสามารถซ่อนประกาศแทนได้');
-    result=await supabase.from('listings').delete().eq('id',id).eq('owner_id',currentSession.user.id);
+    const imageResult=await supabase.from('listings').select('image_path').eq('id',id).maybeSingle();
+    let query=supabase.from('listings').delete().eq('id',id);
+    if(!currentIsAdmin) query=query.eq('owner_id',currentSession.user.id);
+    result=await query;
+    if(!result.error && imageResult.data?.image_path) {
+      const removed=await supabase.storage.from(LISTING_IMAGE_BUCKET).remove([imageResult.data.image_path]);
+      if(removed.error) console.warn('ลบไฟล์รูปไม่สำเร็จ',removed.error);
+    }
   } else {
-    result=await supabase.from('listings').update({is_available:!currentAvailable}).eq('id',id).eq('owner_id',currentSession.user.id);
+    let query=supabase.from('listings').update({is_available:!currentAvailable}).eq('id',id);
+    if(!currentIsAdmin) query=query.eq('owner_id',currentSession.user.id);
+    result=await query;
   }
   if(result.error) return showToast('จัดการประกาศไม่สำเร็จ: '+friendlyError(result.error));
-  await refreshListings(); await renderAccountTab('my-listings'); showToast(action==='delete'?'ลบประกาศแล้ว':currentAvailable?'ซ่อนประกาศแล้ว':'เปิดประกาศให้เช่าแล้ว');
+  await refreshListings(); await renderAccountTab(currentIsAdmin && accountTab.startsWith('admin-') ? accountTab : 'my-listings'); showToast(action==='delete'?'ลบประกาศแล้ว':currentAvailable?'ซ่อนประกาศแล้ว':'เปิดประกาศให้เช่าแล้ว');
 }
 async function cancelBooking(id) {
   const {error}=await supabase.from('bookings').update({status:'cancelled'}).eq('id',id).eq('renter_id',currentSession.user.id).eq('status','pending');
@@ -409,12 +512,14 @@ async function initialize() {
   const {data,error}=await supabase.auth.getSession();
   if(error) console.warn('อ่าน session ไม่สำเร็จ',error);
   currentSession=data?.session||null;
-  updateAuthButtons();
+  await loadCurrentProfile();
   await refreshListings();
   supabase.auth.onAuthStateChange((_event,session)=>{
-    currentSession=session; updateAuthButtons();
+    currentSession=session;
+    if (!session) { currentProfile=null; currentIsAdmin=false; updateAuthButtons(); }
+    else updateAuthButtons();
     // Defer network calls out of the auth callback to avoid auth-lock deadlocks.
-    setTimeout(()=>refreshListings(),0);
+    setTimeout(async()=>{ await loadCurrentProfile(); await refreshListings(); },0);
   });
 }
 initialize();
