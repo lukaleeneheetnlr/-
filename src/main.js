@@ -20,9 +20,11 @@ let realtimeChannels = [];
 let activeConversation = null;
 let conversationChannel = null;
 let conversationRecoveryTimer = null;
+const chatSignedUrlCache = new Map();
 let notificationRecoveryTimer = null;
 let notificationCache = [];
 let notificationOffset = 0;
+let chatShareChoices = [];
 const NOTIFICATION_PAGE_SIZE = 50;
 let listingMap = null;
 let listingMarkers = [];
@@ -31,6 +33,7 @@ let locationPickerMap = null;
 let locationPickerMarker = null;
 const THAILAND_BOUNDS = [[5.6, 97.3], [20.5, 105.7]];
 const LISTING_IMAGE_BUCKET = 'listing-images';
+const CHAT_IMAGE_BUCKET = 'conversation-images';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const STORAGE = { listings:'csh_listings_v1', requests:'csh_requests_v1', favorites:'csh_favorites_v1', bookings:'csh_bookings_v1' };
 
@@ -104,9 +107,46 @@ async function uploadListingImage(file) {
   const { data } = supabase.storage.from(LISTING_IMAGE_BUCKET).getPublicUrl(path);
   return { url: data.publicUrl, path };
 }
+async function uploadConversationImage(file, conversationId) {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!allowedTypes.includes(file.type)) throw new Error('รองรับเฉพาะรูป JPG, PNG, WebP หรือ GIF');
+  if (!file.size || file.size > MAX_IMAGE_BYTES) throw new Error('รูปต้องมีขนาดไม่เกิน 5 MB');
+  const extension = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' })[file.type];
+  const path = `${conversationId}/${currentSession.user.id}/${crypto.randomUUID()}.${extension}`;
+  const { error } = await supabase.storage.from(CHAT_IMAGE_BUCKET).upload(path, file, {
+    cacheControl: '3600', upsert: false, contentType: file.type
+  });
+  if (error) throw error;
+  return path;
+}
 function formatBaht(n) { return Number(n || 0).toLocaleString('th-TH'); }
-function formatDateInput(date) { return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`; }
+function formatDateInput(date = new Date()) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date);
+  const part = type => parts.find(value => value.type === type)?.value;
+  return `${part('year')}-${part('month')}-${part('day')}`;
+}
+function addDateDays(value, days) {
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2,'0')}-${String(date.getUTCDate()).padStart(2,'0')}`;
+}
 function formatDateThai(value) { if (!value) return '-'; const d = new Date(`${value}T00:00:00`); return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString('th-TH',{day:'numeric',month:'short',year:'numeric'}); }
+function rentalDaysInclusive(start, end) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start || '') || !/^\d{4}-\d{2}-\d{2}$/.test(end || '') || end < start) return 0;
+  const startTime = Date.parse(`${start}T00:00:00Z`);
+  const endTime = Date.parse(`${end}T00:00:00Z`);
+  return Number.isFinite(startTime) && Number.isFinite(endTime) ? Math.floor((endTime - startTime) / 86400000) + 1 : 0;
+}
+function createRequestKey() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2,'0')).join('');
+  return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+}
 function escapeHTML(value) { return String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
 function showToast(message) {
   const toast = $('#toast'); toast.textContent = message; toast.classList.add('show');
@@ -126,12 +166,30 @@ function closeModal() {
     locationPickerMap = null;
     locationPickerMarker = null;
   }
-  if (activeConversation) {
-    activeConversation = null;
-    if (conversationChannel) void supabase.removeChannel(conversationChannel);
-    conversationChannel = null;
-    if (conversationRecoveryTimer) clearInterval(conversationRecoveryTimer);
-  }
+}
+function closeChatDock() {
+  $('#chatDock')?.setAttribute('hidden', '');
+  if ($('#messageList')) $('#messageList').innerHTML = '';
+  const form = $('#messageForm');
+  form?.reset();
+  clearMessageImagePreview();
+  chatSignedUrlCache.clear();
+  chatShareChoices = [];
+  activeConversation = null;
+  if (conversationChannel) void supabase.removeChannel(conversationChannel);
+  conversationChannel = null;
+  if (conversationRecoveryTimer) clearInterval(conversationRecoveryTimer);
+  conversationRecoveryTimer = null;
+}
+function clearMessageImagePreview(clearFile = true) {
+  const preview = $('#messageImagePreview');
+  if (!preview) return;
+  if (preview.src.startsWith('blob:')) URL.revokeObjectURL(preview.src);
+  preview.hidden = true;
+  preview.removeAttribute('src');
+  const input = $('#messageImage');
+  if (clearFile && input) input.value = '';
+  if ($('#clearMessageImage')) $('#clearMessageImage').hidden = true;
 }
 function friendlyError(error) {
   const message = String(error?.message || error || 'เกิดข้อผิดพลาด');
@@ -140,9 +198,13 @@ function friendlyError(error) {
   if (/user already registered/i.test(message)) return 'อีเมลนี้สมัครสมาชิกแล้ว ลองเข้าสู่ระบบ';
   if (/password should be at least/i.test(message)) return 'รหัสผ่านต้องมีความยาวอย่างน้อย 6 ตัวอักษร';
   if (/approved_dates_do_not_overlap|conflicting key|exclusion constraint/i.test(message)) return 'วันดังกล่าวมีการจองที่อนุมัติแล้ว กรุณาปฏิเสธคำขอนี้หรือเลือกวันอื่น';
+  if (/bookings_request_key_unique|duplicate key value/i.test(message)) return 'คำขอนี้ถูกส่งไปแล้ว กรุณาตรวจสอบรายการจองของคุณ';
   if (/conversations_listing_id_fkey/i.test(message)) return 'ลบประกาศนี้ไม่ได้เพราะมีประวัติแชตอยู่ คุณสามารถซ่อนประกาศแทนได้';
   if (/row-level security|permission denied/i.test(message)) return 'ไม่มีสิทธิ์ทำรายการนี้ ตรวจสอบบัญชีและการตั้งค่า RLS ในฐานข้อมูล';
   return message;
+}
+function isChatAttachmentSchemaMissing(error) {
+  return /(?:message_type|image_path|listing_id|wanted_request_id).*(?:does not exist|schema cache)|column .*messages.* does not exist/i.test(String(error?.message || error || ''));
 }
 function setConnectionNotice() {
   const box = $('#connectionNotice');
@@ -200,6 +262,8 @@ function updateAuthButtons() {
   const notificationButton = $('#openNotificationsTop');
   if (inboxButton) inboxButton.hidden = !signedIn;
   if (notificationButton) notificationButton.hidden = !signedIn;
+  const chatLauncher = $('#chatLauncher');
+  if (chatLauncher) chatLauncher.hidden = !signedIn;
 }
 
 function renderListingMap(items = getListings().filter(item => item.available !== false)) {
@@ -385,21 +449,28 @@ function openBooking(id) {
   if (liveMode && !currentSession?.user) { closeModal(); openAuthModal('login'); return showToast('เข้าสู่ระบบก่อนส่งคำขอจอง'); }
   if (liveMode && currentSession.user.id === item.owner_id) return showToast('คุณไม่สามารถจองประกาศของตัวเองได้');
   if (liveMode && item.available === false) return showToast('รายการนี้ไม่พร้อมให้เช่าในขณะนี้');
-  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); const minDate = formatDateInput(tomorrow);
-  const next = new Date(tomorrow); next.setDate(next.getDate()+1); const nextDate = formatDateInput(next);
-  openModal('ส่งคำขอจอง',`รายการ: ${item.title}`,`<form id="bookingForm" data-id="${escapeHTML(item.id)}"><div class="form-grid">
+  const minDate = formatDateInput();
+  const nextDate = addDateDays(minDate, 1);
+  openModal('ส่งคำขอจอง',`รายการ: ${item.title}`,`<form id="bookingForm" data-id="${escapeHTML(item.id)}" data-request-key="${escapeHTML(createRequestKey())}"><div class="form-grid">
     <div class="form-field"><label for="bookStart">วันรับของ</label><input type="date" id="bookStart" name="start" min="${minDate}" value="${minDate}" required></div>
     <div class="form-field"><label for="bookEnd">วันคืนของ</label><input type="date" id="bookEnd" name="end" min="${minDate}" value="${nextDate}" required></div>
-    <div class="form-field full"><label for="bookPlace">จุดนัดรับที่สะดวก</label><input id="bookPlace" name="place" placeholder="เช่น หน้าอาคารเรียนรวม" required maxlength="100"></div>
+    <div class="form-field full"><label for="bookPlace">จุดนัดรับที่สะดวก</label><input id="bookPlace" name="place" placeholder="เช่น หน้าอาคารเรียนรวม" required minlength="2" maxlength="100"></div>
     <div class="form-field full"><label for="bookNote">ข้อความถึงผู้ปล่อยเช่า <span class="hint">(ไม่บังคับ)</span></label><textarea id="bookNote" name="note" placeholder="เช่น ขอเช็กอุปกรณ์ก่อนรับของ" maxlength="300"></textarea></div>
-  </div><div class="booking-total"><div><strong>ค่าเช่าต่อวัน</strong><div class="hint">฿${formatBaht(item.price)} / วัน · มัดจำ ฿${formatBaht(item.deposit||0)}</div></div><strong id="bookingEstimate">คำนวณหลังเลือกวัน</strong></div><p class="form-footnote">เมื่อส่งแล้ว เจ้าของรายการจะเห็นคำขอในบัญชีและเลือกอนุมัติหรือปฏิเสธได้</p><div class="form-actions"><button type="button" class="btn btn-secondary" data-action="back-detail" data-id="${escapeHTML(item.id)}">กลับ</button><button type="submit" class="btn btn-primary">ส่งคำขอจอง</button></div></form>`);
+  </div><div class="booking-total"><div><strong>ค่าเช่าต่อวัน</strong><div class="hint">฿${formatBaht(item.price)} / วัน</div><div class="hint">เงินมัดจำ ฿${formatBaht(item.deposit||0)} (แยกจากค่าเช่า)</div></div><strong id="bookingEstimate" aria-live="polite"></strong></div><p class="form-footnote">นับรวมทั้งวันรับและวันคืน · ระบบยังไม่รับชำระเงิน</p><p class="form-footnote">เมื่อส่งแล้ว เจ้าของรายการจะเห็นคำขอในบัญชีและเลือกอนุมัติหรือปฏิเสธได้</p><div class="form-actions"><button type="button" class="btn btn-secondary" data-action="back-detail" data-id="${escapeHTML(item.id)}">กลับ</button><button type="submit" class="btn btn-primary">ส่งคำขอจอง</button></div></form>`);
   const form = $('#bookingForm');
-  const updateEstimate = () => { const start=new Date(form.start.value+'T00:00:00'); const end=new Date(form.end.value+'T00:00:00'); const days=Math.max(0,Math.round((end-start)/86400000)+1); $('#bookingEstimate').textContent=days>0?'฿'+formatBaht(days*item.price):'เลือกวันให้ถูกต้อง'; };
-  form.start.addEventListener('change',()=>{form.end.min=form.start.value;if(form.end.value<form.start.value)form.end.value=form.start.value;updateEstimate();}); form.end.addEventListener('change',updateEstimate); updateEstimate();
+  const updateEstimate = () => {
+    const days = rentalDaysInclusive(form.start.value, form.end.value);
+    $('#bookingEstimate').textContent = days
+      ? `${days} ${days === 1 ? 'วัน' : 'วัน'} · ค่าเช่ารวม ฿${formatBaht(days * item.price)}`
+      : 'เลือกช่วงวันที่ถูกต้อง';
+  };
+  form.start.addEventListener('change',()=>{form.end.min=form.start.value;if(form.end.value<form.start.value)form.end.value=form.start.value;updateEstimate();});
+  form.end.addEventListener('change',updateEstimate);
+  updateEstimate();
 }
 function openRequestForm() {
   if (liveMode && !currentSession?.user) { openAuthModal('login'); return showToast('เข้าสู่ระบบก่อนแจ้งสิ่งที่ต้องการ'); }
-  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate()+1); const minDate=formatDateInput(tomorrow);
+  const minDate = addDateDays(formatDateInput(), 1);
   openModal('แจ้งสิ่งที่ต้องการ','เผยแพร่ความต้องการให้นักศึกษาคนอื่นเสนอสินค้าได้',`<form id="requestForm"><div class="form-grid">
     <div class="form-field full"><label for="requestTitle">ต้องการเช่าอะไร? *</label><input id="requestTitle" name="title" required maxlength="100" placeholder="เช่น ไมโครโฟนไร้สายสำหรับถ่ายวิดีโอ"></div>
     <div class="form-field"><label for="requestCategory">หมวดหมู่ *</label><select id="requestCategory" name="category" required><option value="media">ถ่ายภาพและวิดีโอ</option><option value="study">เรียนและโปรเจกต์</option><option value="event">กิจกรรมและอีเวนต์</option><option value="fashion">เสื้อผ้าและโอกาสพิเศษ</option><option value="other">อื่น ๆ</option></select></div>
@@ -604,11 +675,21 @@ async function loadConversationMessages(conversationId) {
   if (!currentSession?.user || activeConversation !== conversationId) return;
   const messages = $('#messageList');
   if (!messages) return;
-  const { data, error } = await supabase.from('messages')
-    .select('id,sender_id,body,created_at,profiles!messages_sender_id_fkey(full_name)')
+  let { data, error } = await supabase.from('messages')
+    .select('id,sender_id,body,created_at,message_type,image_path,listing_id,wanted_request_id,profiles!messages_sender_id_fkey(full_name)')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending:true })
     .limit(100);
+  if (error && isChatAttachmentSchemaMissing(error)) {
+    console.warn('ยังไม่ได้ใช้ migration สำหรับไฟล์แนบแชต กำลังโหลดเฉพาะข้อความเดิม', error);
+    const legacy = await supabase.from('messages')
+      .select('id,sender_id,body,created_at,profiles!messages_sender_id_fkey(full_name)')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending:true })
+      .limit(100);
+    data = (legacy.data || []).map(message => ({...message, message_type:'text'}));
+    error = legacy.error;
+  }
   if (error) {
     messages.innerHTML = `<div class="account-empty">โหลดข้อความไม่ได้: ${escapeHTML(friendlyError(error))}</div>`;
     return;
@@ -617,10 +698,48 @@ async function loadConversationMessages(conversationId) {
     messages.innerHTML = '<div class="account-empty">เริ่มบทสนทนาได้ด้วยการส่งข้อความ</div>';
     return;
   }
-  messages.innerHTML = data.map(message => `<article class="message ${message.sender_id === currentSession.user.id ? 'mine' : ''}">
-    <div class="message-meta"><strong>${escapeHTML(message.profiles?.full_name || 'สมาชิก')}</strong><time>${formatTime(message.created_at)}</time></div>
-    <p>${escapeHTML(message.body)}</p>
-  </article>`).join('');
+  const listingIds = [...new Set(data.map(message => message.listing_id).filter(Boolean))];
+  const requestIds = [...new Set(data.map(message => message.wanted_request_id).filter(Boolean))];
+  const imagePaths = [...new Set(data.map(message => message.image_path).filter(Boolean))];
+  const pathsNeedingSignatures = imagePaths.filter(path => (chatSignedUrlCache.get(path)?.expiresAt || 0) < Date.now() + 60000);
+  const [listingsResult, requestsResult, imagesResult] = await Promise.all([
+    listingIds.length ? supabase.from('listings').select('id,title,category,price_per_day,location,image_url').in('id', listingIds) : Promise.resolve({ data: [], error: null }),
+    requestIds.length ? supabase.from('wanted_requests').select('id,title,category,budget_per_day,requested_date,duration,pickup_zone,details,status').in('id', requestIds) : Promise.resolve({ data: [], error: null }),
+    pathsNeedingSignatures.length ? supabase.storage.from(CHAT_IMAGE_BUCKET).createSignedUrls(pathsNeedingSignatures, 3600) : Promise.resolve({ data: [], error: null })
+  ]);
+  if (listingsResult.error) console.warn('โหลดประกาศที่แชร์ในแชตไม่สำเร็จ', listingsResult.error);
+  if (requestsResult.error) console.warn('โหลดความต้องการที่แชร์ในแชตไม่สำเร็จ', requestsResult.error);
+  if (imagesResult.error) console.warn('สร้างลิงก์รูปแชตไม่สำเร็จ', imagesResult.error);
+  const listings = new Map((listingsResult.data || []).map(item => [item.id, item]));
+  const requests = new Map((requestsResult.data || []).map(item => [item.id, item]));
+  for (const item of imagesResult.data || []) {
+    if (item.signedUrl) chatSignedUrlCache.set(item.path, { url:item.signedUrl, expiresAt:Date.now() + 3500 * 1000 });
+  }
+  const signedImages = new Map(imagePaths.map(path => [path, chatSignedUrlCache.get(path)]).filter(([,entry]) => entry?.expiresAt > Date.now()).map(([path,entry]) => [path,entry.url]));
+  messages.innerHTML = data.map(message => {
+    const type = message.message_type || 'text';
+    let attachment = '';
+    if (type === 'image') {
+      const url = signedImages.get(message.image_path);
+      attachment = url
+        ? `<img class="message-image" src="${escapeHTML(url)}" alt="รูปภาพที่แชร์ในแชต" loading="lazy">`
+        : '<p class="message-unavailable">ไม่สามารถโหลดรูปภาพนี้ได้</p>';
+    } else if (type === 'listing') {
+      const item = listings.get(message.listing_id);
+      attachment = item
+        ? `<button class="shared-item-card" type="button" data-action="shared-listing-detail" data-id="${escapeHTML(item.id)}">${item.image_url ? `<img src="${escapeHTML(item.image_url)}" alt="" loading="lazy">` : ''}<span><strong>${escapeHTML(item.title)}</strong><small>${escapeHTML(categoryLabels[item.category] || 'รายการ')} · ฿${formatBaht(item.price_per_day)} / วัน</small><small>${escapeHTML(item.location || 'ยังไม่ได้ระบุตำแหน่ง')}</small></span></button>`
+        : '<p class="message-unavailable">ประกาศนี้ไม่มีให้ดูแล้ว</p>';
+    } else if (type === 'wanted_request') {
+      const request = requests.get(message.wanted_request_id);
+      attachment = request
+        ? `<button class="shared-item-card" type="button" data-action="shared-request-detail" data-id="${escapeHTML(request.id)}"><span><strong>${escapeHTML(request.title)}</strong><small>${escapeHTML(categoryLabels[request.category] || 'อื่น ๆ')} · งบ ฿${formatBaht(request.budget_per_day)} / วัน</small><small>${formatDateThai(request.requested_date)} · ${escapeHTML(request.duration || 'ยังไม่ได้ระบุระยะเวลา')}</small></span></button>`
+        : '<p class="message-unavailable">ความต้องการนี้ปิดหรือไม่มีให้ดูแล้ว</p>';
+    }
+    return `<article class="message ${message.sender_id === currentSession.user.id ? 'mine' : ''}">
+      <div class="message-meta"><strong>${escapeHTML(message.profiles?.full_name || 'สมาชิก')}</strong><time>${formatTime(message.created_at)}</time></div>
+      ${attachment}${message.body ? `<p>${escapeHTML(message.body)}</p>` : ''}
+    </article>`;
+  }).join('');
   messages.scrollTop = messages.scrollHeight;
 }
 
@@ -635,12 +754,14 @@ async function openConversation(conversationId) {
   const { data:profile, error:profileError } = await supabase.from('profiles')
     .select('full_name').eq('id', participantId).maybeSingle();
   if (profileError) return showToast('โหลดข้อมูลคู่สนทนาไม่สำเร็จ: ' + friendlyError(profileError));
+  closeModal();
+  closeChatDock();
   activeConversation = conversationId;
-  openModal(profile?.full_name || 'แชตกับเจ้าของ', conversation.listings?.title || 'บทสนทนาเกี่ยวกับประกาศ', `<div class="chat-shell">
-    <div id="messageList" class="message-list" aria-live="polite"><div class="account-empty">กำลังโหลดข้อความ…</div></div>
-    <form id="messageForm" data-id="${escapeHTML(conversationId)}" class="message-form"><textarea name="body" maxlength="2000" required aria-label="ข้อความ" placeholder="เขียนข้อความถึงคู่สนทนา"></textarea><button class="btn btn-primary" type="submit">ส่งข้อความ</button></form>
-    <p class="form-footnote">ส่งข้อความระหว่างบัญชีที่เป็นคู่สนทนาเท่านั้น</p>
-  </div>`, true);
+  $('#chatDockTitle').textContent = profile?.full_name || 'สมาชิก';
+  $('#chatDockSubtitle').textContent = conversation.listings?.title || 'บทสนทนาเกี่ยวกับประกาศ';
+  $('#chatDock').hidden = false;
+  $('#messageList').innerHTML = '<div class="account-empty">กำลังโหลดข้อความ…</div>';
+  $('#messageForm').dataset.id = conversationId;
   const { error:readError } = await supabase.rpc('mark_conversation_read', { p_conversation_id:conversationId });
   if (readError) console.warn('ทำเครื่องหมายแชตว่าอ่านแล้วไม่สำเร็จ', readError);
   await loadConversationMessages(conversationId);
@@ -661,20 +782,102 @@ async function openConversation(conversationId) {
 
 async function sendMessage(form) {
   if (!currentSession?.user) return openAuthModal('login');
-  const body = String(new FormData(form).get('body') || '').trim();
-  if (!body) return;
+  const formData = new FormData(form);
+  const body = String(formData.get('body') || '').trim();
+  const file = formData.get('image');
+  if (!body && !(file instanceof File && file.size)) return;
   const button = form.querySelector('button[type="submit"]');
   button.disabled = true;
-  const { error } = await supabase.from('messages').insert({
-    conversation_id:form.dataset.id,
-    sender_id:currentSession.user.id,
-    body
-  });
+  let imagePath = null;
+  try {
+    if (file instanceof File && file.size) imagePath = await uploadConversationImage(file, form.dataset.id);
+    const message = {
+      conversation_id:form.dataset.id,
+      sender_id:currentSession.user.id,
+      body:body || (imagePath ? 'ส่งรูปภาพ' : ''),
+      message_type:imagePath ? 'image' : 'text',
+      image_path:imagePath
+    };
+    let { error } = await supabase.from('messages').insert(message);
+    if (error && !imagePath && body && isChatAttachmentSchemaMissing(error)) {
+      console.warn('ยังไม่ได้ใช้ migration สำหรับไฟล์แนบแชต กำลังส่งเป็นข้อความเดิม', error);
+      ({ error } = await supabase.from('messages').insert({
+        conversation_id:message.conversation_id,
+        sender_id:message.sender_id,
+        body:message.body
+      }));
+    }
+    if (error) throw error;
+  } catch (error) {
+    if (imagePath) {
+      const { error:removeError } = await supabase.storage.from(CHAT_IMAGE_BUCKET).remove([imagePath]);
+      if (removeError) console.error('ลบรูปที่ส่งข้อความไม่สำเร็จ', removeError);
+    }
+    button.disabled = false;
+    return showToast('ส่งข้อความไม่สำเร็จ: ' + friendlyError(error));
+  }
   button.disabled = false;
-  if (error) return showToast('ส่งข้อความไม่สำเร็จ: ' + friendlyError(error));
   form.reset();
+  clearMessageImagePreview();
   await loadConversationMessages(form.dataset.id);
   await refreshNotificationCount();
+}
+
+async function openSharePicker() {
+  if (!currentSession?.user) return openAuthModal('login');
+  const [listingResult, requestResult] = await Promise.all([
+    supabase.from('listings').select('id,title,category,price_per_day,location,image_url').eq('owner_id', currentSession.user.id).order('created_at', { ascending:false }),
+    supabase.from('wanted_requests').select('id,title,category,budget_per_day,requested_date,duration,pickup_zone,details,status').or(`owner_id.eq.${currentSession.user.id},status.eq.open`).order('created_at', { ascending:false })
+  ]);
+  if (listingResult.error) return showToast('โหลดประกาศเพื่อแชร์ไม่สำเร็จ: ' + friendlyError(listingResult.error));
+  if (requestResult.error) return showToast('โหลดความต้องการเพื่อแชร์ไม่สำเร็จ: ' + friendlyError(requestResult.error));
+  const choices = [
+    ...(listingResult.data || []).map(item => ({...item, shareType:'listing'})),
+    ...(requestResult.data || []).map(item => ({...item, shareType:'wanted_request'}))
+  ];
+  const content = choices.length ? `<div class="share-choice-list">${choices.map(item => `<button type="button" class="share-choice" data-action="share-chat-item" data-type="${item.shareType}" data-id="${escapeHTML(item.id)}"><strong>${escapeHTML(item.title)}</strong><small>${item.shareType === 'listing' ? `ประกาศของคุณ · ฿${formatBaht(item.price_per_day)} / วัน` : `ความต้องการ · งบ ฿${formatBaht(item.budget_per_day)} / วัน`}</small></button>`).join('')}</div>` : '<div class="account-empty">ยังไม่มีประกาศหรือความต้องการที่แชร์ได้</div>';
+  chatShareChoices = choices;
+  openModal('แชร์รายการในแชต', 'เลือกประกาศหรือความต้องการจากข้อมูลจริงในระบบ', content);
+}
+
+async function shareChatItem(type, id) {
+  const item = chatShareChoices.find(choice => choice.id === id && choice.shareType === type);
+  if (!item || !activeConversation || !currentSession?.user) return showToast('ไม่พบรายการสำหรับแชร์ กรุณาเปิดรายการใหม่');
+  const body = item.title;
+  const { error } = await supabase.from('messages').insert({
+    conversation_id:activeConversation,
+    sender_id:currentSession.user.id,
+    body,
+    message_type:type,
+    listing_id:type === 'listing' ? id : null,
+    wanted_request_id:type === 'wanted_request' ? id : null
+  });
+  if (error) return showToast('แชร์รายการไม่สำเร็จ: ' + friendlyError(error));
+  chatShareChoices = [];
+  closeModal();
+  await loadConversationMessages(activeConversation);
+}
+
+async function openSharedListing(id) {
+  const { data, error } = await supabase.from('listings')
+    .select('id,owner_id,title,category,description,condition,price_per_day,deposit,location,image_url,image_path,pickup_latitude,pickup_longitude,is_available,created_at,profiles!listings_owner_id_fkey(full_name)')
+    .eq('id', id).maybeSingle();
+  if (error) return showToast('โหลดประกาศที่แชร์ไม่สำเร็จ: ' + friendlyError(error));
+  if (!data) return showToast('ประกาศนี้ไม่มีให้ดูแล้ว');
+  const item = fromDbListing(data);
+  const index = listingCache.findIndex(listing => listing.id === id);
+  if (index >= 0) listingCache[index] = item;
+  else listingCache.unshift(item);
+  listingDetail(id);
+}
+
+async function openSharedRequest(id) {
+  const { data, error } = await supabase.from('wanted_requests')
+    .select('id,title,category,budget_per_day,requested_date,duration,pickup_zone,details,status')
+    .eq('id', id).maybeSingle();
+  if (error) return showToast('โหลดความต้องการที่แชร์ไม่สำเร็จ: ' + friendlyError(error));
+  if (!data) return showToast('ความต้องการนี้ปิดหรือไม่มีให้ดูแล้ว');
+  openModal(data.title, 'ความต้องการที่แชร์ในแชต', `<div class="shared-request-detail"><p>${escapeHTML(data.details || 'ยังไม่ได้ระบุรายละเอียด')}</p><dl><div><dt>หมวดหมู่</dt><dd>${escapeHTML(categoryLabels[data.category] || 'อื่น ๆ')}</dd></div><div><dt>งบต่อวัน</dt><dd>฿${formatBaht(data.budget_per_day)} / วัน</dd></div><div><dt>วันที่ต้องการ</dt><dd>${formatDateThai(data.requested_date)} · ${escapeHTML(data.duration || 'ยังไม่ได้ระบุระยะเวลา')}</dd></div><div><dt>โซนรับ</dt><dd>${escapeHTML(data.pickup_zone || 'ยังไม่ได้ระบุตำแหน่ง')}</dd></div></dl></div>`);
 }
 
 async function refreshConversationList() {
@@ -879,11 +1082,8 @@ function startRealtime(userId) {
 function stopRealtime() {
   realtimeChannels.forEach(channel => void supabase.removeChannel(channel));
   realtimeChannels = [];
-  if (conversationChannel) void supabase.removeChannel(conversationChannel);
-  conversationChannel = null;
-  if (conversationRecoveryTimer) clearInterval(conversationRecoveryTimer);
   if (notificationRecoveryTimer) clearInterval(notificationRecoveryTimer);
-  activeConversation = null;
+  closeChatDock();
 }
 async function handleListingSubmit(form) {
   const mode = form.dataset.mode;
@@ -1000,18 +1200,46 @@ async function handleListingSubmit(form) {
   showToast(mode === 'edit' ? 'บันทึกการแก้ไขประกาศแล้ว' : 'เพิ่มประกาศตัวอย่างในเบราว์เซอร์นี้แล้ว');
 }
 async function handleBookingSubmit(form) {
-  const data=Object.fromEntries(new FormData(form).entries()); const item=getListings().find(x=>x.id===form.dataset.id); if(!item)return;
-  if(!data.start||!data.end||data.end<data.start)return showToast('วันที่คืนต้องไม่อยู่ก่อนวันที่รับของ');
-  const start=new Date(data.start+'T00:00:00'); const end=new Date(data.end+'T00:00:00'); const days=Math.round((end-start)/86400000)+1;
+  if (form.dataset.submitting === 'true') return;
+  const data = Object.fromEntries(new FormData(form).entries());
+  const item = getListings().find(x => x.id === form.dataset.id);
+  if (!item) return showToast('ไม่พบรายการนี้');
+  const days = rentalDaysInclusive(data.start, data.end);
+  const today = formatDateInput(new Date());
+  if (!days) return showToast('วันคืนต้องเป็นวันเดียวกันหรือหลังวันรับของ');
+  if (data.start < today) return showToast('ไม่สามารถจองวันที่ผ่านมาแล้วได้');
+  const place = String(data.place || '').trim();
+  if (place.length < 2 || place.length > 100) return showToast('กรุณาระบุจุดนัดรับ 2–100 ตัวอักษร');
+  form.dataset.submitting = 'true';
+  const submitButton = form.querySelector('button[type="submit"]');
+  if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'กำลังส่งคำขอ…'; }
   if (liveMode) {
-    if (!currentSession?.user) return openAuthModal('login');
-    if (currentSession.user.id === item.owner_id) return showToast('คุณไม่สามารถจองประกาศของตัวเองได้');
-    const payload = { listing_id:item.id, renter_id:currentSession.user.id, start_date:data.start, end_date:data.end, pickup_location:data.place.trim(), note:data.note?.trim() || null, status:'pending' };
-    const { error } = await supabase.from('bookings').insert(payload);
-    if (error) { showToast('ส่งคำขอจองไม่สำเร็จ: '+friendlyError(error)); return; }
-    closeModal(); showToast(`ส่งคำขอจองแล้ว ${days} วัน รวมค่าเช่าโดยประมาณ ฿${formatBaht(days*item.price)} — รอเจ้าของตอบรับ`); return;
+    if (!currentSession?.user) { form.dataset.submitting = 'false'; if (submitButton) submitButton.disabled = false; return openAuthModal('login'); }
+    if (currentSession.user.id === item.owner_id) { form.dataset.submitting = 'false'; if (submitButton) submitButton.disabled = false; return showToast('คุณไม่สามารถจองประกาศของตัวเองได้'); }
+    const payload = {
+      listing_id:item.id, renter_id:currentSession.user.id, start_date:data.start,
+      end_date:data.end, pickup_location:place, note:String(data.note || '').trim() || null,
+      status:'pending', request_key:form.dataset.requestKey
+    };
+    try {
+      const { data:saved, error } = await supabase.from('bookings')
+        .insert(payload).select('id,total_price').single();
+      if (error) { showToast('ส่งคำขอจองไม่สำเร็จ: ' + friendlyError(error)); return; }
+      closeModal();
+      showToast(`ส่งคำขอจองแล้ว ${days} วัน · ค่าเช่ารวม ฿${formatBaht(saved.total_price)} · มัดจำ ฿${formatBaht(item.deposit || 0)} (ยังไม่มีการชำระเงิน)`);
+      return;
+    } catch (error) {
+      showToast('ส่งคำขอจองไม่สำเร็จ: ' + friendlyError(error));
+      return;
+    } finally {
+      if ($('#bookingForm')) {
+        $('#bookingForm').dataset.submitting = 'false';
+        const button = $('#bookingForm button[type="submit"]');
+        if (button) { button.disabled = false; button.textContent = 'ส่งคำขอจอง'; }
+      }
+    }
   }
-  const bookings=readStore(STORAGE.bookings,[]);bookings.unshift({id:'book-'+Date.now(),listingId:item.id,title:item.title,start:data.start,end:data.end,days,place:data.place,note:data.note||'',estimate:days*item.price,status:'คำขอจำลอง',createdAt:new Date().toISOString()});writeStore(STORAGE.bookings,bookings);closeModal();showToast(`บันทึกคำขอจำลองแล้ว: ${days} วัน รวมค่าเช่าตัวอย่าง ฿${formatBaht(days*item.price)}`);
+  const bookings=readStore(STORAGE.bookings,[]);bookings.unshift({id:'book-'+Date.now(),listingId:item.id,title:item.title,start:data.start,end:data.end,days,place,note:data.note||'',estimate:days*item.price,status:'คำขอจำลอง',createdAt:new Date().toISOString()});writeStore(STORAGE.bookings,bookings);closeModal();showToast(`บันทึกคำขอจำลองแล้ว: ${days} วัน รวมค่าเช่าตัวอย่าง ฿${formatBaht(days*item.price)}`);
 }
 function toggleFavorite(id) {const fav=getFavorites();const next=fav.includes(id)?fav.filter(x=>x!==id):[...fav,id];writeStore(STORAGE.favorites,next);renderListings();showToast(next.includes(id)?'บันทึกไว้แล้ว':'นำออกจากรายการที่บันทึกแล้ว');}
 
@@ -1056,6 +1284,40 @@ async function handleAuthSubmit(form) {
 }
 
 function statusText(status) { return ({pending:'รออนุมัติ',approved:'อนุมัติแล้ว',rejected:'ปฏิเสธ',cancelled:'ยกเลิก',completed:'เสร็จสิ้น'})[status] || status; }
+function bookingGroups(rows) {
+  const today = formatDateInput(new Date());
+  const groups = [
+    ['pending','รอเจ้าของตอบรับ', row => row.status === 'pending'],
+    ['upcoming','อนุมัติแล้ว · กำลังจะมาถึง', row => row.status === 'approved' && row.start_date > today],
+    ['active','อนุมัติแล้ว · กำลังเช่า', row => row.status === 'approved' && row.start_date <= today && row.end_date >= today],
+    ['return','เลยกำหนดคืน · รอยืนยันการคืนของ', row => row.status === 'approved' && row.end_date < today],
+    ['completed','เสร็จสิ้น', row => row.status === 'completed'],
+    ['rejected','ปฏิเสธแล้ว', row => row.status === 'rejected'],
+    ['cancelled','ยกเลิกแล้ว', row => row.status === 'cancelled']
+  ];
+  return groups.map(([key,title,matches]) => ({key,title,rows:rows.filter(matches)})).filter(group => group.rows.length);
+}
+function renderBookingRows(rows, listingById, role, renterNames = {}) {
+  if (!rows.length) return '<div class="account-empty">ยังไม่มีรายการจองในส่วนนี้</div>';
+  const groups = bookingGroups(rows);
+  return groups.map(group => `<section class="booking-group" data-booking-group="${group.key}"><h3>${group.title} <span>${group.rows.length}</span></h3><div class="account-list">${group.rows.map(row => {
+    const item = listingById[row.listing_id] || {};
+    const days = rentalDaysInclusive(row.start_date,row.end_date);
+    const image = item.image_url || 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80';
+    const dailyRate = row.price_per_day ?? (days ? Number(row.total_price) / days : null);
+    const depositText = row.deposit == null ? 'ไม่บันทึกข้อมูลเดิม' : `฿${formatBaht(row.deposit)}`;
+    const contact = role === 'owner'
+      ? `ผู้จอง: ${escapeHTML(renterNames[row.renter_id] || 'สมาชิก')}`
+      : `เจ้าของ: ${escapeHTML(item.profiles?.full_name || 'สมาชิก')}`;
+    const actions = [
+      item.id ? `<button class="btn btn-secondary" data-action="booking-chat" data-id="${escapeHTML(row.id)}">แชตเกี่ยวกับการจอง</button>` : '',
+      role === 'renter' && row.status === 'pending' ? `<button class="btn btn-danger" data-action="cancel-booking" data-id="${escapeHTML(row.id)}">ยกเลิกคำขอ</button>` : '',
+      role !== 'renter' && row.status === 'pending' ? `<button class="btn btn-primary" data-action="booking-approve" data-id="${escapeHTML(row.id)}">อนุมัติ</button><button class="btn btn-danger" data-action="booking-reject" data-id="${escapeHTML(row.id)}">ปฏิเสธ</button>` : '',
+      role !== 'renter' && row.status === 'approved' && row.end_date <= formatDateInput(new Date()) ? `<button class="btn btn-primary" data-action="booking-complete" data-id="${escapeHTML(row.id)}">ยืนยันรับคืนและจบการเช่า</button>` : ''
+    ].filter(Boolean).join('');
+    return `<article class="account-row booking-row"><img class="booking-thumbnail" src="${escapeHTML(image)}" alt="${escapeHTML(item.title || 'รูปประกาศ')}" loading="lazy" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80'"><div class="booking-copy"><h4>${escapeHTML(item.title || 'ประกาศสินค้า')}</h4><p>${contact}</p><p>วันเช่า: ${escapeHTML(formatDateThai(row.start_date))} – ${escapeHTML(formatDateThai(row.end_date))} · ${days} วัน (นับรวมวันรับและวันคืน)</p><p>ค่าเช่า: ฿${formatBaht(dailyRate || 0)} / วัน × ${days} วัน = ฿${formatBaht(row.total_price)} · มัดจำ ${depositText}</p><p>จุดนัดรับ: ${escapeHTML(row.pickup_location || '-')} · <span class="status-pill ${escapeHTML(row.status)}">${escapeHTML(statusText(row.status))}</span></p>${row.note ? `<p>ข้อความ: ${escapeHTML(row.note)}</p>` : ''}${row.rejection_reason ? `<p>เหตุผลที่ปฏิเสธ: ${escapeHTML(row.rejection_reason)}</p>` : ''}</div><div class="account-actions">${actions}</div></article>`;
+  }).join('')}</div></section>`).join('');
+}
 function accountShell(tab) {
   const tabs = currentIsAdmin
     ? [['admin-overview','ภาพรวมแอดมิน'],['admin-listings','ประกาศทั้งหมด'],['admin-bookings','การจองทั้งหมด'],['admin-users','สมาชิกทั้งหมด'],['my-listings','ประกาศของฉัน'],['as-renter','รายการที่ฉันจอง'],['as-owner','คำขอที่ได้รับ'],['my-wanted','ความต้องการของฉัน'],['incoming-offers','ข้อเสนอที่ได้รับ'],['inbox','ข้อความ']]
@@ -1103,15 +1365,15 @@ async function renderAdminTab(tab, out) {
     const itemIds=[...new Set(rows.map(row=>row.listing_id))];
     const userIds=[...new Set(rows.map(row=>row.renter_id))];
     const [{data:listings,error:listError},{data:profiles,error:profilesError},{data:users,error:usersError}]=await Promise.all([
-      supabase.from('listings').select('id,title,owner_id,location').in('id',itemIds),
+      supabase.from('listings').select('id,title,owner_id,location,price_per_day,deposit,image_url,profiles!listings_owner_id_fkey(full_name)').in('id',itemIds),
       supabase.from('profiles').select('id,full_name').in('id',userIds),
       supabase.rpc('admin_list_users')
     ]);
     if(listError) throw listError; if(profilesError) throw profilesError; if(usersError) throw usersError;
     const itemMap=Object.fromEntries((listings||[]).map(item=>[item.id,item]));
-    const profileMap=Object.fromEntries((profiles||[]).map(user=>[user.id,user.full_name]));
     const userMap=Object.fromEntries((users||[]).map(user=>[user.user_id,user]));
-    out.innerHTML=`<div class="account-list">${rows.map(row=>{const item=itemMap[row.listing_id]||{};const renter=userMap[row.renter_id]||{};return `<div class="account-row"><div><h3>${escapeHTML(item.title||'ประกาศที่ถูกลบ')}</h3><p>ผู้จอง: ${escapeHTML(profileMap[row.renter_id]||renter.full_name||'สมาชิก')} · ${escapeHTML(renter.email||'-')}</p><p>วันเช่า: ${formatDateThai(row.start_date)} – ${formatDateThai(row.end_date)} · จุดรับ: ${escapeHTML(row.pickup_location||'-')}</p><p>ค่าเช่ารวม ฿${formatBaht(row.total_price)} · <span class="status-pill ${escapeHTML(row.status)}">${statusText(row.status)}</span></p>${row.note?`<p>หมายเหตุ: ${escapeHTML(row.note)}</p>`:''}</div><div class="account-actions">${row.status==='pending'?`<button class="btn btn-primary" data-action="booking-approve" data-id="${row.id}">อนุมัติ</button><button class="btn btn-danger" data-action="booking-reject" data-id="${row.id}">ปฏิเสธ</button>`:''}</div></div>`}).join('')}</div>`;
+    const renterNames=Object.fromEntries((profiles||[]).map(profile=>[profile.id,`${profile.full_name||userMap[profile.id]?.full_name||'สมาชิก'} · ${userMap[profile.id]?.email||'-'}`]));
+    out.innerHTML=renderBookingRows(rows,itemMap,'admin',renterNames);
     return;
   }
   out.innerHTML='<div class="account-empty">ไม่พบหน้าจัดการที่ต้องการ</div>';
@@ -1174,10 +1436,11 @@ async function renderAccountTab(tab) {
       const {data,error}=await supabase.from('bookings').select('*').eq('renter_id',uid).order('created_at',{ascending:false});
       if(error) throw error;
       const rows=data||[]; const itemIds=[...new Set(rows.map(x=>x.listing_id))];
-      const listingsMap={};
-      if(itemIds.length){const r=await supabase.from('listings').select('id,title,price_per_day,location,owner_id').in('id',itemIds); if(!r.error) for(const it of r.data||[])listingsMap[it.id]=it;}
       if(!rows.length){out.innerHTML='<div class="account-empty">คุณยังไม่ได้ส่งคำขอจองสินค้า</div>';return;}
-      out.innerHTML=`<div class="account-list">${rows.map(row=>{const item=listingsMap[row.listing_id]||{};return `<div class="account-row"><div><h3>${escapeHTML(item.title||'ประกาศสินค้า')}</h3><p>${formatDateThai(row.start_date)} – ${formatDateThai(row.end_date)} · ${escapeHTML(row.pickup_location||'-')}</p><p>ค่าเช่ารวม ฿${formatBaht(row.total_price)} · <span class="status-pill ${escapeHTML(row.status)}">${statusText(row.status)}</span></p>${row.note?`<p>ข้อความ: ${escapeHTML(row.note)}</p>`:''}</div><div class="account-actions">${item.id?`<button class="btn btn-secondary" data-action="booking-chat" data-id="${escapeHTML(row.id)}">แชตเกี่ยวกับการจอง</button>`:''}${row.status==='pending'?`<button class="btn btn-danger" data-action="cancel-booking" data-id="${row.id}">ยกเลิกคำขอ</button>`:''}</div></div>`}).join('')}</div>`; return;
+      const {data:listings,error:listingError}=await supabase.from('listings').select('id,title,price_per_day,deposit,location,image_url,owner_id,profiles!listings_owner_id_fkey(full_name)').in('id',itemIds);
+      if(listingError) throw listingError;
+      const listingsMap=Object.fromEntries((listings||[]).map(item=>[item.id,item]));
+      out.innerHTML=renderBookingRows(rows,listingsMap,'renter'); return;
     }
     const {data:myListings,error:listError}=await supabase.from('listings').select('id').eq('owner_id',uid);
     if(listError) throw listError;
@@ -1186,20 +1449,47 @@ async function renderAccountTab(tab) {
     const {data,error}=await supabase.from('bookings').select('*').in('listing_id',ids).order('created_at',{ascending:false});
     if(error) throw error;
     const rows=data||[]; const listingById={};
-    const {data:ownedRows}=await supabase.from('listings').select('id,title,price_per_day,location').in('id',ids);
+    const {data:ownedRows,error:ownedError}=await supabase.from('listings').select('id,title,price_per_day,deposit,location,image_url').in('id',ids);
+    if(ownedError) throw ownedError;
     for(const it of ownedRows||[])listingById[it.id]=it;
     const renterIds=[...new Set(rows.map(x=>x.renter_id))]; const names={};
-    if(renterIds.length){const prof=await supabase.from('profiles').select('id,full_name').in('id',renterIds);if(!prof.error)for(const pr of prof.data||[])names[pr.id]=pr.full_name;}
+    if(renterIds.length){const prof=await supabase.from('profiles').select('id,full_name').in('id',renterIds);if(prof.error)throw prof.error;for(const pr of prof.data||[])names[pr.id]=pr.full_name;}
     if(!rows.length){out.innerHTML='<div class="account-empty">ยังไม่มีใครส่งคำขอจองประกาศของคุณ</div>';return;}
-    out.innerHTML=`<div class="account-list">${rows.map(row=>{const item=listingById[row.listing_id]||{};return `<div class="account-row"><div><h3>${escapeHTML(item.title||'ประกาศสินค้า')}</h3><p>ผู้จอง: ${escapeHTML(names[row.renter_id]||'สมาชิก')} · ${formatDateThai(row.start_date)} – ${formatDateThai(row.end_date)}</p><p>จุดนัดรับ: ${escapeHTML(row.pickup_location||'-')} · ค่าเช่ารวม ฿${formatBaht(row.total_price)}</p>${row.note?`<p>ข้อความ: ${escapeHTML(row.note)}</p>`:''}<p><span class="status-pill ${escapeHTML(row.status)}">${statusText(row.status)}</span></p></div><div class="account-actions">${item.id?`<button class="btn btn-secondary" data-action="booking-chat" data-id="${escapeHTML(row.id)}">แชตเกี่ยวกับการจอง</button>`:''}${row.status==='pending'?`<button class="btn btn-primary" data-action="booking-approve" data-id="${row.id}">อนุมัติ</button><button class="btn btn-danger" data-action="booking-reject" data-id="${row.id}">ปฏิเสธ</button>`:''}</div></div>`}).join('')}</div>`;
+    out.innerHTML=renderBookingRows(rows,listingById,'owner',names);
   } catch(error) {
     out.innerHTML=`<div class="account-empty">โหลดข้อมูลไม่ได้: ${escapeHTML(friendlyError(error))}</div>`;
   }
 }
-async function processBookingDecision(id,status) {
-  const {error}=await supabase.rpc('respond_to_booking',{p_booking_id:id,p_status:status});
-  if(error){showToast('เปลี่ยนสถานะไม่ได้: '+friendlyError(error));return;}
+function openBookingRejection(id) {
+  const returnTab = accountTab;
+  openModal('ปฏิเสธคำขอจอง','ระบุเหตุผลเพื่อแจ้งผู้เช่า (ไม่บังคับ)',`<form id="bookingRejectForm" data-id="${escapeHTML(id)}" data-return-tab="${escapeHTML(returnTab)}"><div class="form-field"><label for="bookingRejectReason">เหตุผลที่ปฏิเสธ</label><textarea id="bookingRejectReason" name="reason" maxlength="500" placeholder="เช่น ไม่สะดวกให้เช่าในช่วงวันที่เลือก"></textarea></div><div class="form-actions"><button type="button" class="btn btn-secondary" data-action="booking-reject-cancel">กลับ</button><button type="submit" class="btn btn-danger">ยืนยันปฏิเสธ</button></div></form>`);
+}
+async function processBookingDecision(id,status,reason=null) {
+  try {
+    const {error}=await supabase.rpc('respond_to_booking',{p_booking_id:id,p_status:status,p_reason:reason});
+    if(error){
+      showToast('เปลี่ยนสถานะไม่ได้: '+friendlyError(error));
+      if (!$('#accountContent')) openAccountDashboard(accountTab);
+      return;
+    }
+  } catch(error) {
+    showToast('เปลี่ยนสถานะไม่ได้: '+friendlyError(error));
+    if (!$('#accountContent')) openAccountDashboard(accountTab);
+    return;
+  }
   showToast(status==='approved'?'อนุมัติการจองแล้ว':'ปฏิเสธคำขอแล้ว');
+  if ($('#accountContent')) await renderAccountTab(accountTab);
+  else openAccountDashboard(accountTab);
+}
+async function completeBooking(id) {
+  if (!confirm('ยืนยันว่าได้รับของคืนแล้วและจบการเช่านี้ใช่ไหม? การเช่าที่เสร็จสิ้นจะไม่สามารถเปิดกลับได้')) return;
+  try {
+    const {error}=await supabase.rpc('complete_booking',{p_booking_id:id});
+    if(error) return showToast('ยืนยันการคืนของไม่สำเร็จ: '+friendlyError(error));
+  } catch(error) {
+    return showToast('ยืนยันการคืนของไม่สำเร็จ: '+friendlyError(error));
+  }
+  showToast('ยืนยันรับคืนและจบการเช่าแล้ว');
   await renderAccountTab(accountTab);
 }
 async function respondToOffer(id, status) {
@@ -1249,8 +1539,12 @@ async function manageListing(id,action,currentAvailable) {
   await refreshListings(); await renderAccountTab(currentIsAdmin && accountTab.startsWith('admin-') ? accountTab : 'my-listings'); showToast(action==='delete'?'ลบประกาศแล้ว':currentAvailable?'ซ่อนประกาศแล้ว':'เปิดประกาศให้เช่าแล้ว');
 }
 async function cancelBooking(id) {
-  const {error}=await supabase.from('bookings').update({status:'cancelled'}).eq('id',id).eq('renter_id',currentSession.user.id).eq('status','pending');
-  if(error) return showToast('ยกเลิกคำขอไม่สำเร็จ: '+friendlyError(error));
+  try {
+    const {error}=await supabase.rpc('cancel_booking',{p_booking_id:id});
+    if(error) return showToast('ยกเลิกคำขอไม่สำเร็จ: '+friendlyError(error));
+  } catch(error) {
+    return showToast('ยกเลิกคำขอไม่สำเร็จ: '+friendlyError(error));
+  }
   showToast('ยกเลิกคำขอจองแล้ว'); await renderAccountTab('as-renter');
 }
 
@@ -1261,11 +1555,16 @@ document.addEventListener('click', async event => {
   const action=actionEl.dataset.action, id=actionEl.dataset.id;
   if(action==='detail') listingDetail(id);
   else if(action==='open-listing-detail') listingDetail(id);
+  else if(action==='shared-listing-detail') await openSharedListing(id);
+  else if(action==='shared-request-detail') await openSharedRequest(id);
   else if(action==='listing-chat') await openConversationForListing(id);
   else if(action==='booking-chat') await openConversationForBooking(id);
   else if(action==='offer-chat') await openConversationForListing(actionEl.dataset.listingId);
   else if(action==='open-conversation') await openConversation(id);
   else if(action==='open-inbox') await openInbox();
+  else if(action==='share-chat-item' && actionEl.dataset.picker) await openSharePicker();
+  else if(action==='share-chat-item') await shareChatItem(actionEl.dataset.type, id);
+  else if(action==='remove-chat-image') clearMessageImagePreview();
   else if(action==='open-notifications') await openNotifications();
   else if(action==='notification-link') await openNotificationTarget(id);
   else if(action==='mark-notifications-read') await markNotificationsRead();
@@ -1289,7 +1588,9 @@ document.addEventListener('click', async event => {
   else if(action==='logout') await logout();
   else if(action==='account-tab') await renderAccountTab(actionEl.dataset.tab);
   else if(action==='booking-approve') await processBookingDecision(id,'approved');
-  else if(action==='booking-reject') await processBookingDecision(id,'rejected');
+  else if(action==='booking-reject') openBookingRejection(id);
+  else if(action==='booking-reject-cancel') { closeModal(); openAccountDashboard(accountTab); }
+  else if(action==='booking-complete') await completeBooking(id);
   else if(action==='cancel-booking') await cancelBooking(id);
   else if(action==='toggle-listing') await manageListing(id,'toggle',actionEl.dataset.available==='true');
   else if(action==='delete-listing') await manageListing(id,'delete',false);
@@ -1299,6 +1600,15 @@ document.addEventListener('submit',event=>{
   if(event.target.id==='requestForm'){event.preventDefault();handleRequestSubmit(event.target);}
   if(event.target.id==='listingForm'){event.preventDefault();handleListingSubmit(event.target);}
   if(event.target.id==='bookingForm'){event.preventDefault();handleBookingSubmit(event.target);}
+  if(event.target.id==='bookingRejectForm'){
+    event.preventDefault();
+    const form=event.target;
+    const id=form.dataset.id;
+    const reason=String(new FormData(form).get('reason')||'').trim()||null;
+    accountTab=form.dataset.returnTab||accountTab;
+    closeModal();
+    processBookingDecision(id,'rejected',reason);
+  }
   if(event.target.id==='authForm'){event.preventDefault();handleAuthSubmit(event.target);}
   if(event.target.id==='offerForm'){event.preventDefault();handleOfferSubmit(event.target);}
   if(event.target.id==='messageForm'){event.preventDefault();sendMessage(event.target);}
@@ -1315,8 +1625,29 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
 ['#openListingTop','#openListingMobile'].forEach(sel=>$(sel)?.addEventListener('click',()=>openListingForm()));
 $('#openAuthTop')?.addEventListener('click',()=>openAuthModal('login'));
 $('#openAccountTop')?.addEventListener('click',()=>openAccountDashboard());
-$('#openInboxTop')?.addEventListener('click',openInbox);
-$('#openNotificationsTop')?.addEventListener('click',openNotifications);
+$('#closeChatDock')?.addEventListener('click',closeChatDock);
+$('#messageImage')?.addEventListener('change', event => {
+  const file = event.target.files?.[0];
+  const preview = $('#messageImagePreview');
+  clearMessageImagePreview(false);
+  if (!file) {
+    return;
+  }
+  if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type) || file.size > MAX_IMAGE_BYTES) {
+    event.target.value = '';
+    showToast('เลือกรูป JPG, PNG, WebP หรือ GIF ขนาดไม่เกิน 5 MB');
+    return;
+  }
+  preview.src = URL.createObjectURL(file);
+  preview.hidden = false;
+  $('#clearMessageImage').hidden = false;
+});
+$('#messageForm textarea')?.addEventListener('keydown', event => {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    event.target.form.requestSubmit();
+  }
+});
 $('#mobileMenu').addEventListener('click',()=>{
   const accountActions = currentSession?.user
     ? `<button class="btn btn-secondary" data-action="open-account">${currentIsAdmin?'แผงควบคุมแอดมิน':'บัญชีของฉัน'}</button><button class="btn btn-secondary" data-action="open-inbox">ข้อความ</button><button class="btn btn-secondary" data-action="open-notifications">การแจ้งเตือน <span class="notification-count" data-mobile-notification-count>0</span></button><button class="btn btn-danger" data-action="logout">ออกจากระบบ</button>`
