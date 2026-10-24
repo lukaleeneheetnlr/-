@@ -7,6 +7,23 @@
 begin;
 
 -- 1) Notification kinds for owner payouts (keeps every kind used by earlier migrations)
+do $$
+begin
+  if exists (
+    select 1 from public.notifications
+    where kind not in (
+      'booking_requested','booking_approved','booking_rejected','booking_cancelled',
+      'booking_completed','booking_handover','booking_received','booking_returned',
+      'review_received','report_updated','chat_message','offer_submitted',
+      'offer_accepted','offer_declined','request_closed','payment_submitted',
+      'payment_verified','payment_rejected','deposit_refund_pending','deposit_refunded',
+      'payout_pending','payout_paid','meeting_point_updated'
+    )
+  ) then
+    raise exception 'Existing notifications.kind values are outside the supported set; inspect them with diagnose_migration.sql before replacing the constraint';
+  end if;
+end;
+$$;
 alter table public.notifications
   drop constraint if exists notifications_kind_check;
 alter table public.notifications
@@ -16,7 +33,7 @@ alter table public.notifications
     'review_received','report_updated','chat_message','offer_submitted',
     'offer_accepted','offer_declined','request_closed','payment_submitted',
     'payment_verified','payment_rejected','deposit_refund_pending','deposit_refunded',
-    'payout_pending','payout_paid'
+    'payout_pending','payout_paid','meeting_point_updated'
   ));
 
 -- 2) Platform fee settings (one row)
@@ -121,18 +138,48 @@ create trigger bookings_zz_set_service_fee
 alter table public.payment_settings
   add column if not exists promptpay_id text,
   add column if not exists promptpay_name text;
-alter table public.payment_settings
-  drop constraint if exists payment_settings_promptpay_id_check;
-alter table public.payment_settings
-  add constraint payment_settings_promptpay_id_check check (
-    promptpay_id is null or promptpay_id ~ '^([0-9]{10}|[0-9]{13}|[0-9]{15})$'
-  );
-alter table public.payment_settings
-  drop constraint if exists payment_settings_promptpay_name_check;
-alter table public.payment_settings
-  add constraint payment_settings_promptpay_name_check check (
-    promptpay_name is null or char_length(promptpay_name) between 2 and 100
-  );
+do $$
+begin
+  if exists (
+    select 1 from public.payment_settings
+    where promptpay_id is not null
+      and promptpay_id !~ '^([0-9]{10}|[0-9]{13}|[0-9]{15})$'
+  ) then
+    raise exception 'Existing PromptPay IDs are invalid; inspect them before replacing payment_settings_promptpay_id_check';
+  end if;
+  if exists (
+    select 1 from public.payment_settings
+    where promptpay_name is not null
+      and char_length(promptpay_name) not between 2 and 100
+  ) then
+    raise exception 'Existing PromptPay names are invalid; inspect them before replacing payment_settings_promptpay_name_check';
+  end if;
+end;
+$$;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.payment_settings'::regclass
+      and conname = 'payment_settings_promptpay_id_check'
+  ) then
+    alter table public.payment_settings
+      add constraint payment_settings_promptpay_id_check check (
+        promptpay_id is null or promptpay_id ~ '^([0-9]{10}|[0-9]{13}|[0-9]{15})$'
+      );
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.payment_settings'::regclass
+      and conname = 'payment_settings_promptpay_name_check'
+  ) then
+    alter table public.payment_settings
+      add constraint payment_settings_promptpay_name_check check (
+        promptpay_name is null or char_length(promptpay_name) between 2 and 100
+      );
+  end if;
+end;
+$$;
 
 create or replace function public.admin_update_promptpay(p_promptpay_id text, p_promptpay_name text)
 returns public.payment_settings

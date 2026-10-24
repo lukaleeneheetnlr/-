@@ -10,7 +10,14 @@ alter table public.profiles
   add column if not exists avatar_path text;
 do $$
 begin
-  if not exists (
+  if exists (
+    select 1 from public.profiles
+    where (bio is not null and char_length(bio) > 500)
+      or ((avatar_url is null) <> (avatar_path is null))
+  ) then
+    raise exception 'Existing profile bio/avatar values violate the intended checks; inspect them before adding profile constraints';
+  end if;
+  if exists (
     select 1 from pg_constraint
     where conrelid='public.profiles'::regclass and conname='profiles_bio_length_check'
   ) then
@@ -47,6 +54,13 @@ alter table public.bookings
   add column if not exists owner_contact_phone text;
 do $$
 begin
+  if exists (
+    select 1 from public.bookings
+    where (renter_contact_phone is not null and char_length(renter_contact_phone) not between 7 and 25)
+      or (owner_contact_phone is not null and char_length(owner_contact_phone) not between 7 and 25)
+  ) then
+    raise exception 'Existing booking contact phones violate the intended length check; inspect them before adding bookings_contact_phone_length_check';
+  end if;
   if not exists (
     select 1 from pg_constraint
     where conrelid='public.bookings'::regclass and conname='bookings_contact_phone_length_check'
