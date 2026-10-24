@@ -34,6 +34,8 @@ let locationPickerMarker = null;
 const THAILAND_BOUNDS = [[5.6, 97.3], [20.5, 105.7]];
 const LISTING_IMAGE_BUCKET = 'listing-images';
 const CHAT_IMAGE_BUCKET = 'conversation-images';
+const PAYMENT_PROOF_BUCKET = 'payment-proofs';
+const RENTAL_EVIDENCE_BUCKET = 'rental-evidence';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 const STORAGE = { listings:'csh_listings_v1', requests:'csh_requests_v1', favorites:'csh_favorites_v1', bookings:'csh_bookings_v1' };
 
@@ -114,6 +116,42 @@ async function uploadConversationImage(file, conversationId) {
   const extension = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif' })[file.type];
   const path = `${conversationId}/${currentSession.user.id}/${crypto.randomUUID()}.${extension}`;
   const { error } = await supabase.storage.from(CHAT_IMAGE_BUCKET).upload(path, file, {
+    cacheControl: '3600', upsert: false, contentType: file.type
+  });
+  if (error) throw error;
+  return path;
+}
+function getImageExtension(file) {
+  const extension = { 'image/jpeg':'jpg', 'image/png':'png', 'image/webp':'webp' }[file?.type];
+  if (!extension) throw new Error('รองรับเฉพาะรูป JPG, PNG หรือ WebP');
+  if (!file.size || file.size > MAX_IMAGE_BYTES) throw new Error('รูปต้องมีขนาดไม่เกิน 5 MB');
+  return extension;
+}
+async function uploadRentalEvidence(file, path) {
+  const extension = getImageExtension(file);
+  const fullPath = `${path}.${extension}`;
+  const { error } = await supabase.storage.from(RENTAL_EVIDENCE_BUCKET).upload(fullPath, file, {
+    cacheControl:'3600', upsert:false, contentType:file.type
+  });
+  if (error) throw error;
+  return fullPath;
+}
+async function uploadProfileAvatar(file) {
+  const extension = getImageExtension(file);
+  const path = `${currentSession.user.id}/avatar-${crypto.randomUUID()}.${extension}`;
+  const { error } = await supabase.storage.from(LISTING_IMAGE_BUCKET).upload(path, file, {
+    cacheControl:'3600', upsert:false, contentType:file.type
+  });
+  if (error) throw error;
+  return { path, url:supabase.storage.from(LISTING_IMAGE_BUCKET).getPublicUrl(path).data.publicUrl };
+}
+async function uploadPaymentProof(file, bookingId) {
+  const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) throw new Error('เลือกรูปหลักฐาน JPG, PNG หรือ WebP เท่านั้น');
+  if (!file.size || file.size > MAX_IMAGE_BYTES) throw new Error('รูปหลักฐานต้องมีขนาดไม่เกิน 5 MB');
+  const extension = ({ 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' })[file.type];
+  const path = `${currentSession.user.id}/${bookingId}/${crypto.randomUUID()}.${extension}`;
+  const { error } = await supabase.storage.from(PAYMENT_PROOF_BUCKET).upload(path, file, {
     cacheControl: '3600', upsert: false, contentType: file.type
   });
   if (error) throw error;
@@ -201,6 +239,8 @@ function friendlyError(error) {
   if (/bookings_request_key_unique|duplicate key value/i.test(message)) return 'คำขอนี้ถูกส่งไปแล้ว กรุณาตรวจสอบรายการจองของคุณ';
   if (/conversations_listing_id_fkey/i.test(message)) return 'ลบประกาศนี้ไม่ได้เพราะมีประวัติแชตอยู่ คุณสามารถซ่อนประกาศแทนได้';
   if (/row-level security|permission denied/i.test(message)) return 'ไม่มีสิทธิ์ทำรายการนี้ ตรวจสอบบัญชีและการตั้งค่า RLS ในฐานข้อมูล';
+  if (/payment_settings|booking_payments|booking_payment_events|submit_booking_payment|admin_review_booking_payment|admin_record_deposit_refund|admin_update_payment_instructions|booking_payment_proof_path/i.test(message)) return 'ฐานข้อมูลยังไม่ได้ติดตั้ง migration ระบบชำระเงินและเงินมัดจำ โปรดแจ้งผู้ดูแลระบบ';
+  if (/rental_reviews|issue_reports|get_listing_review_stats|confirm_booking_milestone|owner_handed_over_at|renter_returned_at|schema cache/i.test(message)) return 'ฐานข้อมูลยังไม่ได้ติดตั้ง migration ระบบรับคืน รีวิว และรายงานปัญหา โปรดแจ้งผู้ดูแลระบบ';
   return message;
 }
 function isChatAttachmentSchemaMissing(error) {
@@ -227,7 +267,7 @@ function fromDbListing(row) {
   return {
     id: row.id, owner_id: row.owner_id, title: row.title, category: row.category,
     categoryLabel: categoryLabels[row.category] || 'อื่น ๆ', price: Number(row.price_per_day), deposit: Number(row.deposit || 0),
-    location: row.location, owner, initial: owner.slice(0,1), condition: row.condition,
+    location: row.location, owner, ownerBio:row.profiles?.bio || '', ownerAvatar:row.profiles?.avatar_url || '', initial: owner.slice(0,1), condition: row.condition,
     description: row.description, image: row.image_url || 'https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80', image_path: row.image_path || null,
     tag: row.is_available ? 'สมาชิกลงประกาศ' : 'ไม่พร้อมให้เช่า', available: row.is_available,
     latitude: row.pickup_latitude == null ? null : Number(row.pickup_latitude),
@@ -238,7 +278,7 @@ function fromDbListing(row) {
 async function refreshListings() {
   if (!liveMode) { renderListings(); return; }
   const { data, error } = await supabase.from('listings')
-    .select('*, profiles!listings_owner_id_fkey(full_name)')
+    .select('*, profiles!listings_owner_id_fkey(*)')
     .order('created_at', { ascending: false });
   if (error) {
     console.error('โหลดประกาศไม่สำเร็จ', error);
@@ -256,7 +296,13 @@ function updateAuthButtons() {
   if (loginButton) loginButton.hidden = signedIn;
   if (accountButton) {
     accountButton.hidden = !signedIn;
-    accountButton.textContent = signedIn ? (currentIsAdmin ? 'แอดมิน' : `บัญชี: ${currentProfile?.full_name || currentSession.user.user_metadata?.full_name || currentSession.user.email?.split('@')[0] || 'ของฉัน'}`) : 'บัญชีของฉัน';
+    const name = currentProfile?.full_name || currentSession?.user?.user_metadata?.full_name || currentSession?.user?.email?.split('@')[0] || 'สมาชิก';
+    const avatar = currentProfile?.avatar_url
+      ? `<img class="nav-profile-avatar" src="${escapeHTML(currentProfile.avatar_url)}" alt="">`
+      : `<span class="nav-profile-avatar nav-profile-initial" aria-hidden="true">${escapeHTML(name.slice(0,1))}</span>`;
+    accountButton.innerHTML = signedIn ? `${avatar}<span>โปรไฟล์ของฉัน</span>` : 'โปรไฟล์ของฉัน';
+    accountButton.setAttribute('aria-label', `เปิดโปรไฟล์ของ ${name}`);
+    accountButton.title = `${name} · เปิดโปรไฟล์ของฉัน`;
   }
   const inboxButton = $('#openInboxTop');
   const notificationButton = $('#openNotificationsTop');
@@ -413,7 +459,7 @@ function listingCard(item) {
       <span class="tag">${escapeHTML(item.tag || item.categoryLabel || 'รายการใหม่')}</span>
       <button class="heart ${saved?'saved':''}" type="button" data-action="favorite" data-id="${escapeHTML(item.id)}" aria-pressed="${saved}" aria-label="${saved?'นำออกจากรายการที่บันทึก':'บันทึกประกาศนี้'}" title="${saved?'นำออกจากรายการโปรด':'บันทึกเป็นรายการโปรด'}">${saved?'♥':'♡'}</button>
     </div>
-    <div class="listing-body"><div class="listing-meta"><span class="owner"><span class="avatar">${escapeHTML(item.initial || 'U')}</span>${escapeHTML(item.owner || 'สมาชิก')}</span><span class="badge-demo">${item.isReal?'สมาชิก':'ตัวอย่าง'}</span></div>
+    <div class="listing-body"><div class="listing-meta"><span class="owner">${item.ownerAvatar?`<img class="avatar" src="${escapeHTML(item.ownerAvatar)}" alt="" loading="lazy">`:`<span class="avatar">${escapeHTML(item.initial || 'U')}</span>`}${escapeHTML(item.owner || 'สมาชิก')}</span><span class="badge-demo">${item.isReal?'สมาชิก':'ตัวอย่าง'}</span></div>
       <h3 class="listing-title">${escapeHTML(item.title)}</h3><div class="listing-location">⌖ ${escapeHTML(item.location || 'ยังไม่ได้ระบุตำแหน่ง')}</div>
       <div class="listing-bottom"><div class="listing-price-group"><span class="availability-label"><span aria-hidden="true"></span>พร้อมให้เช่า</span><div class="price">฿${formatBaht(item.price)} <small>/ วัน</small></div><div class="deposit">${item.isReal?'เงินมัดจำ':'มัดจำตัวอย่าง'} ฿${formatBaht(item.deposit || 0)}</div></div><div class="listing-actions"><button class="tiny-btn detail-btn" type="button" data-action="detail" data-id="${escapeHTML(item.id)}">รายละเอียด</button><button class="btn btn-primary card-book-btn" type="button" data-action="book" data-id="${escapeHTML(item.id)}" aria-label="ขอจอง ${escapeHTML(item.title)}">ขอจอง</button></div></div>
     </div>
@@ -440,11 +486,108 @@ function listingDetail(id) {
   const ownItem = liveMode && currentSession?.user?.id === item.owner_id;
   const button = ownItem
     ? '<div class="form-footnote">นี่คือประกาศของคุณ จัดการสถานะได้จาก “บัญชีของฉัน”</div>'
-    : `${liveMode?`<button class="btn btn-secondary" style="width:100%;margin-top:8px" data-action="listing-chat" data-id="${escapeHTML(item.id)}">แชตกับเจ้าของ</button>`:''}<button class="btn btn-primary" style="width:100%;margin-top:8px" data-action="book" data-id="${escapeHTML(item.id)}">ขอจองรายการนี้</button>`;
-  const html = `<div class="detail-layout"><img class="detail-img" src="${escapeHTML(item.image || '')}" alt="${escapeHTML(item.title)}" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80'"><div class="detail-copy"><span class="badge-demo">${escapeHTML(item.categoryLabel || 'รายการ')}</span><h3 style="margin-top:10px">${escapeHTML(item.title)}</h3><div class="listing-location">⌖ ${escapeHTML(item.location || 'ยังไม่ได้ระบุตำแหน่ง')}</div><div class="detail-price">฿${formatBaht(item.price)} <small>/ วัน</small></div><div class="detail-row"><span>เงินมัดจำ</span><strong>฿${formatBaht(item.deposit || 0)}</strong></div><div class="detail-row"><span>เจ้าของรายการ</span><strong>${escapeHTML(item.owner || 'สมาชิก')}</strong></div><div class="detail-row"><span>สภาพของ</span><strong>${escapeHTML(item.condition || 'ยังไม่ได้ระบุสภาพ')}</strong></div><p>${escapeHTML(item.description || 'ยังไม่ได้ระบุรายละเอียด')}</p>${button}<p class="form-footnote">คำขอจองจะส่งให้เจ้าของอนุมัติหรือปฏิเสธ ยังไม่มีการชำระเงินจริง</p></div></div>`;
+    : `${liveMode?`<button class="btn btn-secondary" style="width:100%;margin-top:8px" data-action="listing-chat" data-id="${escapeHTML(item.id)}">แชตกับเจ้าของ</button><button class="btn btn-secondary" style="width:100%;margin-top:8px" data-action="report-listing" data-id="${escapeHTML(item.id)}" data-owner-id="${escapeHTML(item.owner_id)}">รายงานประกาศหรือผู้ใช้</button>`:''}<button class="btn btn-primary" style="width:100%;margin-top:8px" data-action="book" data-id="${escapeHTML(item.id)}">ขอจองรายการนี้</button>`;
+  const ownerProfile = `${item.ownerAvatar?`<img class="avatar" src="${escapeHTML(item.ownerAvatar)}" alt="" loading="lazy">`:''}<span>${escapeHTML(item.owner || 'สมาชิก')}</span>`;
+  const html = `<div class="detail-layout"><img class="detail-img" src="${escapeHTML(item.image || '')}" alt="${escapeHTML(item.title)}" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80'"><div class="detail-copy"><span class="badge-demo">${escapeHTML(item.categoryLabel || 'รายการ')}</span><h3 style="margin-top:10px">${escapeHTML(item.title)}</h3><div class="listing-location">⌖ ${escapeHTML(item.location || 'ยังไม่ได้ระบุตำแหน่ง')}</div><div class="detail-price">฿${formatBaht(item.price)} <small>/ วัน</small></div><div class="detail-row"><span>เงินมัดจำ</span><strong>฿${formatBaht(item.deposit || 0)}</strong></div><div class="detail-row"><span>เจ้าของรายการ</span><strong class="owner-profile">${ownerProfile}</strong></div><p>${escapeHTML(item.ownerBio || 'ยังไม่ได้ระบุรายละเอียด')}</p><div class="detail-row"><span>สภาพของ</span><strong>${escapeHTML(item.condition || 'ยังไม่ได้ระบุสภาพ')}</strong></div><p>${escapeHTML(item.description || 'ยังไม่ได้ระบุรายละเอียด')}</p>${button}<p class="form-footnote">คำขอจองจะส่งให้เจ้าของอนุมัติหรือปฏิเสธ ยังไม่มีการชำระเงินจริง</p></div></div><section class="listing-reviews" id="listingReviews" aria-live="polite"><h3>รีวิวจากผู้เช่า</h3><div class="account-empty">กำลังโหลดรีวิว…</div></section>`;
   openModal('รายละเอียดรายการ','ตรวจสอบข้อมูลก่อนส่งคำขอจอง',html,true);
+  if (liveMode) void loadListingReviews(item.id);
 }
-function openBooking(id) {
+async function loadListingReviews(listingId) {
+  const panel = $('#listingReviews');
+  if (!panel) return;
+  const [statsResult, reviewsResult] = await Promise.all([
+    supabase.rpc('get_listing_review_stats', { p_listing_id:listingId }),
+    supabase.from('rental_reviews')
+      .select('id,booking_id,reviewer_id,rating,comment,created_at,profiles!rental_reviews_reviewer_id_fkey(full_name)')
+      .eq('listing_id', listingId)
+      .eq('is_hidden', false)
+      .order('created_at', { ascending:false })
+      .limit(30)
+  ]);
+  if (statsResult.error || reviewsResult.error) {
+    const error = statsResult.error || reviewsResult.error;
+    panel.innerHTML = `<h3>รีวิวจากผู้เช่า</h3><div class="account-empty">โหลดรีวิวไม่ได้: ${escapeHTML(friendlyError(error))}</div>`;
+    return;
+  }
+  const data = reviewsResult.data;
+  const stats = statsResult.data?.[0];
+  if (!data?.length) {
+    panel.innerHTML = '<div class="review-heading"><h3>รีวิวจากผู้เช่า</h3><strong>ยังไม่มีคะแนน <small>(0 รีวิว)</small></strong></div><div class="account-empty">ยังไม่มีรีวิวสำหรับประกาศนี้</div>';
+    return;
+  }
+  panel.innerHTML = `<div class="review-heading"><h3>รีวิวจากผู้เช่า</h3><strong>★ ${Number(stats?.average_rating || 0).toFixed(1)} <small>(${Number(stats?.review_count || 0)} รีวิว)</small></strong></div><div class="review-list">${data.map(review => `<article class="review-card"><div><strong>${escapeHTML(review.profiles?.full_name || 'สมาชิก')}</strong><span aria-label="${review.rating} จาก 5 ดาว">${'★'.repeat(review.rating)}${'☆'.repeat(5-review.rating)}</span></div><time>${formatTime(review.created_at)}</time><p>${escapeHTML(review.comment || 'ไม่ได้เขียนความคิดเห็นเพิ่มเติม')}</p>${currentSession?.user && currentSession.user.id !== review.reviewer_id ? `<button class="text-action" data-action="report-review" data-id="${escapeHTML(review.id)}">รายงานรีวิว</button>` : ''}</article>`).join('')}</div>`;
+}
+function openReportForm({ bookingId = '', listingId = '', reportedUserId = '', reviewId = '' } = {}) {
+  if (!currentSession?.user) { openAuthModal('login'); return; }
+  openModal('รายงานปัญหา', 'ข้อมูลจะส่งให้ทีมแอดมินตรวจสอบ', `<form id="issueReportForm" data-booking-id="${escapeHTML(bookingId)}" data-listing-id="${escapeHTML(listingId)}" data-reported-user-id="${escapeHTML(reportedUserId)}" data-review-id="${escapeHTML(reviewId)}"><div class="form-field"><label for="reportCategory">ประเภทปัญหา</label><select id="reportCategory" name="category" required><option value="item_mismatch">สินค้าไม่ตรงรายละเอียด</option><option value="cannot_contact">ติดต่อคู่สัญญาไม่ได้</option><option value="handover_return">ปัญหาการรับหรือคืนสินค้า</option><option value="damaged_item">สินค้าเสียหาย</option><option value="user_conduct">พฤติกรรมผู้ใช้</option><option value="other">อื่น ๆ</option></select></div><div class="form-field"><label for="reportDescription">รายละเอียด</label><textarea id="reportDescription" name="description" minlength="5" maxlength="2000" required placeholder="อธิบายสิ่งที่เกิดขึ้นและข้อมูลที่ช่วยให้ตรวจสอบได้"></textarea></div><div class="form-field"><label for="reportEvidence">รูปประกอบ <span class="hint">(ไม่บังคับ · สูงสุด 5 รูป รูปละไม่เกิน 5 MB)</span></label><input id="reportEvidence" name="evidence" type="file" accept="image/jpeg,image/png,image/webp" multiple></div><p class="form-footnote">รายงานนี้จะเห็นได้เฉพาะคุณ คู่สัญญาที่เกี่ยวข้อง และแอดมิน</p><div class="form-actions"><button class="btn btn-secondary" type="button" data-action="close">ยกเลิก</button><button class="btn btn-primary" type="submit">ส่งรายงาน</button></div></form>`);
+}
+async function submitIssueReport(form) {
+  if (form.dataset.submitting === 'true') return;
+  const data = new FormData(form);
+  const files = Array.from(form.elements.namedItem('evidence').files || []);
+  if (files.length > 5) return showToast('แนบภาพได้ไม่เกิน 5 รูป');
+  try { files.forEach(getImageExtension); }
+  catch (error) { return showToast(error.message); }
+  const button = form.querySelector('button[type="submit"]');
+  form.dataset.submitting = 'true';
+  if (button) { button.disabled = true; button.textContent = 'กำลังส่งรายงาน…'; }
+  const payload = {
+    id:crypto.randomUUID(),
+    reporter_id:currentSession.user.id,
+    booking_id:form.dataset.bookingId || null,
+    listing_id:form.dataset.listingId || null,
+    reported_user_id:form.dataset.reportedUserId || null,
+    review_id:form.dataset.reviewId || null,
+    category:String(data.get('category') || ''),
+    description:String(data.get('description') || '').trim()
+  };
+  const { error } = await supabase.from('issue_reports').insert(payload);
+  if (error) {
+    form.dataset.submitting = 'false';
+    if (button) { button.disabled = false; button.textContent = 'ส่งรายงาน'; }
+    return showToast('ส่งรายงานไม่สำเร็จ: ' + friendlyError(error));
+  }
+  try {
+    for (const file of files) {
+      const path = await uploadRentalEvidence(file, `report/${payload.id}/${currentSession.user.id}/${crypto.randomUUID()}`);
+      const { error:attachError } = await supabase.rpc('attach_issue_report_evidence', {
+        p_report_id:payload.id, p_storage_path:path
+      });
+      if (attachError) {
+        const { error:cleanupError } = await supabase.storage.from(RENTAL_EVIDENCE_BUCKET).remove([path]);
+        if (cleanupError) console.warn('ลบหลักฐานรายงานที่แนบไม่สำเร็จ', cleanupError);
+        throw attachError;
+      }
+    }
+  } catch (uploadError) {
+    closeModal();
+    showToast('รายงานถูกส่งแล้ว แต่แนบรูปไม่สำเร็จ: ' + friendlyError(uploadError));
+    if (accountTab === 'my-reports' && $('#accountContent')) await renderAccountTab('my-reports');
+    return;
+  }
+  closeModal();
+  showToast('ส่งรายงานแล้ว คุณติดตามสถานะได้ในบัญชีของฉัน');
+  if (accountTab === 'my-reports' && $('#accountContent')) await renderAccountTab('my-reports');
+}
+function openReviewForm(bookingId, listingId) {
+  openModal('รีวิวหลังการเช่า', 'รีวิวได้เมื่อการเช่าเสร็จสิ้นแล้วเท่านั้น', `<form id="rentalReviewForm" data-booking-id="${escapeHTML(bookingId)}"><div class="form-field"><label for="reviewRating">คะแนน</label><select id="reviewRating" name="rating" required><option value="">เลือกคะแนน</option><option value="5">5 ดาว · ดีมาก</option><option value="4">4 ดาว · ดี</option><option value="3">3 ดาว · พอใช้</option><option value="2">2 ดาว · ควรปรับปรุง</option><option value="1">1 ดาว · ไม่พอใจ</option></select></div><div class="form-field"><label for="reviewComment">ความคิดเห็น <span class="hint">(ไม่บังคับ)</span></label><textarea id="reviewComment" name="comment" maxlength="1000" placeholder="แบ่งปันประสบการณ์การเช่า"></textarea></div><p class="form-footnote">รีวิวหนึ่งครั้งต่อรายการจอง ไม่สามารถแก้ไขหลังส่งได้</p><div class="form-actions"><button class="btn btn-secondary" type="button" data-action="close">ยกเลิก</button><button class="btn btn-primary" type="submit">ส่งรีวิว</button></div></form>`);
+  $('#rentalReviewForm').dataset.listingId = listingId;
+}
+async function submitRentalReview(form) {
+  const data = new FormData(form);
+  const { error } = await supabase.rpc('submit_rental_review', {
+    p_booking_id:form.dataset.bookingId,
+    p_rating:Number(data.get('rating')),
+    p_comment:String(data.get('comment') || '').trim()
+  });
+  if (error) return showToast('ส่งรีวิวไม่สำเร็จ: ' + friendlyError(error));
+  const listingId = form.dataset.listingId;
+  closeModal();
+  showToast('ขอบคุณสำหรับรีวิว');
+  await renderAccountTab('as-renter');
+  if (listingId) void loadListingReviews(listingId);
+}
+async function openBooking(id) {
   const item = getListings().find(x=>x.id===id); if(!item) return showToast('ไม่พบรายการนี้');
   if (liveMode && !currentSession?.user) { closeModal(); openAuthModal('login'); return showToast('เข้าสู่ระบบก่อนส่งคำขอจอง'); }
   if (liveMode && currentSession.user.id === item.owner_id) return showToast('คุณไม่สามารถจองประกาศของตัวเองได้');
@@ -455,18 +598,31 @@ function openBooking(id) {
     <div class="form-field"><label for="bookStart">วันรับของ</label><input type="date" id="bookStart" name="start" min="${minDate}" value="${minDate}" required></div>
     <div class="form-field"><label for="bookEnd">วันคืนของ</label><input type="date" id="bookEnd" name="end" min="${minDate}" value="${nextDate}" required></div>
     <div class="form-field full"><label for="bookPlace">จุดนัดรับที่สะดวก</label><input id="bookPlace" name="place" placeholder="เช่น หน้าอาคารเรียนรวม" required minlength="2" maxlength="100"></div>
+    <div class="form-field full"><label for="bookPhone">เบอร์ติดต่อสำหรับรายการเช่านี้ <span class="hint">(ไม่บังคับ)</span></label><input id="bookPhone" name="contact_phone" type="tel" maxlength="25" autocomplete="tel" placeholder="ใช้ติดต่อเฉพาะคู่สัญญา"></div>
     <div class="form-field full"><label for="bookNote">ข้อความถึงผู้ปล่อยเช่า <span class="hint">(ไม่บังคับ)</span></label><textarea id="bookNote" name="note" placeholder="เช่น ขอเช็กอุปกรณ์ก่อนรับของ" maxlength="300"></textarea></div>
-  </div><div class="booking-total"><div><strong>ค่าเช่าต่อวัน</strong><div class="hint">฿${formatBaht(item.price)} / วัน</div><div class="hint">เงินมัดจำ ฿${formatBaht(item.deposit||0)} (แยกจากค่าเช่า)</div></div><strong id="bookingEstimate" aria-live="polite"></strong></div><p class="form-footnote">นับรวมทั้งวันรับและวันคืน · ระบบยังไม่รับชำระเงิน</p><p class="form-footnote">เมื่อส่งแล้ว เจ้าของรายการจะเห็นคำขอในบัญชีและเลือกอนุมัติหรือปฏิเสธได้</p><div class="form-actions"><button type="button" class="btn btn-secondary" data-action="back-detail" data-id="${escapeHTML(item.id)}">กลับ</button><button type="submit" class="btn btn-primary">ส่งคำขอจอง</button></div></form>`);
+  </div><div class="booking-total"><div><strong>ค่าเช่าต่อวัน</strong><div class="hint">฿${formatBaht(item.price)} / วัน</div><div class="hint">เงินมัดจำ ฿${formatBaht(item.deposit||0)} (แยกจากค่าเช่า)</div><div class="hint">ค่าบริการแพลตฟอร์ม ฿0 (ยังไม่มีการกำหนดค่าบริการ)</div></div><div id="bookingEstimate" aria-live="polite"></div></div><p class="form-footnote">คิดรวมวันรับและวันคืน · ยอดนี้เป็นสรุปก่อนส่งคำขอ ไม่ใช่การชำระเงิน · หากเจ้าของอนุมัติ จึงแจ้งชำระผ่านบัญชีได้</p><p class="form-footnote">เมื่อส่งแล้ว เจ้าของรายการจะเห็นคำขอในบัญชีและเลือกอนุมัติหรือปฏิเสธได้</p><div class="form-actions"><button type="button" class="btn btn-secondary" data-action="back-detail" data-id="${escapeHTML(item.id)}">กลับ</button><button type="submit" class="btn btn-primary">ส่งคำขอจอง</button></div></form>`);
   const form = $('#bookingForm');
   const updateEstimate = () => {
     const days = rentalDaysInclusive(form.start.value, form.end.value);
-    $('#bookingEstimate').textContent = days
-      ? `${days} ${days === 1 ? 'วัน' : 'วัน'} · ค่าเช่ารวม ฿${formatBaht(days * item.price)}`
+    $('#bookingEstimate').innerHTML = days
+      ? `<strong>${days} วัน</strong><div class="hint">ค่าเช่ารวม ฿${formatBaht(days * item.price)}</div><div class="hint">รวมเงินมัดจำ ฿${formatBaht(item.deposit||0)} = ฿${formatBaht(days * item.price + (item.deposit||0))}</div>`
       : 'เลือกช่วงวันที่ถูกต้อง';
   };
   form.start.addEventListener('change',()=>{form.end.min=form.start.value;if(form.end.value<form.start.value)form.end.value=form.start.value;updateEstimate();});
   form.end.addEventListener('change',updateEstimate);
   updateEstimate();
+  if (liveMode && currentSession?.user) {
+    const renterId = currentSession.user.id;
+    void supabase.from('profile_contacts').select('phone').eq('user_id', renterId).maybeSingle()
+      .then(({ data, error }) => {
+        if (error) {
+          if (!/does not exist|schema cache/i.test(error.message || '')) console.warn('โหลดเบอร์ติดต่อส่วนตัวไม่สำเร็จ', error);
+          return;
+        }
+        const phoneInput = $('#bookingForm input[name="contact_phone"]');
+        if (currentSession?.user?.id === renterId && phoneInput && !phoneInput.value) phoneInput.value = data?.phone || '';
+      }).catch(error => console.warn('โหลดเบอร์ติดต่อส่วนตัวไม่สำเร็จ', error));
+  }
 }
 function openRequestForm() {
   if (liveMode && !currentSession?.user) { openAuthModal('login'); return showToast('เข้าสู่ระบบก่อนแจ้งสิ่งที่ต้องการ'); }
@@ -642,7 +798,7 @@ async function importLegacyWantedRequests(userId) {
 function formatTime(value) {
   if (!value) return '';
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('th-TH', { dateStyle:'short', timeStyle:'short' });
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('th-TH', { dateStyle:'short', timeStyle:'short', timeZone:'Asia/Bangkok' });
 }
 function notificationGroupLabel(value) {
   const date = new Date(value);
@@ -1020,6 +1176,15 @@ async function openNotificationTarget(notificationId) {
   await refreshNotificationCount();
   if (item.link_type === 'conversation') return openConversation(item.link_id);
   if (item.link_type === 'listing') { closeModal(); return listingDetail(item.link_id); }
+  if (item.link_type === 'report') return openAccountDashboard(currentIsAdmin ? 'admin-reports' : 'my-reports');
+  if (item.link_type === 'payment') return openAccountDashboard(currentIsAdmin ? 'admin-payments' : 'payments');
+  if (item.link_type === 'review') {
+    const { data:review, error:reviewError } = await supabase.from('rental_reviews').select('listing_id').eq('id', item.link_id).maybeSingle();
+    if (reviewError) return showToast('เปิดรีวิวไม่ได้: ' + friendlyError(reviewError));
+    if (!review) return showToast('ไม่พบรีวิวนี้');
+    closeModal();
+    return listingDetail(review.listing_id);
+  }
   if (item.link_type === 'booking') {
     const { data:booking, error:bookingError } = await supabase.from('bookings').select('renter_id,listing_id').eq('id', item.link_id).maybeSingle();
     if (bookingError) return showToast('เปิดการจองไม่ได้: ' + friendlyError(bookingError));
@@ -1210,6 +1375,8 @@ async function handleBookingSubmit(form) {
   if (data.start < today) return showToast('ไม่สามารถจองวันที่ผ่านมาแล้วได้');
   const place = String(data.place || '').trim();
   if (place.length < 2 || place.length > 100) return showToast('กรุณาระบุจุดนัดรับ 2–100 ตัวอักษร');
+  const contactPhone = String(data.contact_phone || '').trim().replace(/[^\d+]/g, '');
+  if (contactPhone && (contactPhone.length < 7 || contactPhone.length > 25)) return showToast('เบอร์ติดต่อต้องมีความยาว 7–25 ตัวอักษร');
   form.dataset.submitting = 'true';
   const submitButton = form.querySelector('button[type="submit"]');
   if (submitButton) { submitButton.disabled = true; submitButton.textContent = 'กำลังส่งคำขอ…'; }
@@ -1221,6 +1388,7 @@ async function handleBookingSubmit(form) {
       end_date:data.end, pickup_location:place, note:String(data.note || '').trim() || null,
       status:'pending', request_key:form.dataset.requestKey
     };
+    if (contactPhone) payload.renter_contact_phone = contactPhone;
     try {
       const { data:saved, error } = await supabase.from('bookings')
         .insert(payload).select('id,total_price').single();
@@ -1290,14 +1458,14 @@ function bookingGroups(rows) {
     ['pending','รอเจ้าของตอบรับ', row => row.status === 'pending'],
     ['upcoming','อนุมัติแล้ว · กำลังจะมาถึง', row => row.status === 'approved' && row.start_date > today],
     ['active','อนุมัติแล้ว · กำลังเช่า', row => row.status === 'approved' && row.start_date <= today && row.end_date >= today],
-    ['return','เลยกำหนดคืน · รอยืนยันการคืนของ', row => row.status === 'approved' && row.end_date < today],
+    ['return','ถึงกำหนดคืน · รอการยืนยัน', row => row.status === 'approved' && row.end_date <= today],
     ['completed','เสร็จสิ้น', row => row.status === 'completed'],
     ['rejected','ปฏิเสธแล้ว', row => row.status === 'rejected'],
     ['cancelled','ยกเลิกแล้ว', row => row.status === 'cancelled']
   ];
   return groups.map(([key,title,matches]) => ({key,title,rows:rows.filter(matches)})).filter(group => group.rows.length);
 }
-function renderBookingRows(rows, listingById, role, renterNames = {}) {
+function renderBookingRows(rows, listingById, role, renterNames = {}, reviewedBookingIds = new Set()) {
   if (!rows.length) return '<div class="account-empty">ยังไม่มีรายการจองในส่วนนี้</div>';
   const groups = bookingGroups(rows);
   return groups.map(group => `<section class="booking-group" data-booking-group="${group.key}"><h3>${group.title} <span>${group.rows.length}</span></h3><div class="account-list">${group.rows.map(row => {
@@ -1309,27 +1477,482 @@ function renderBookingRows(rows, listingById, role, renterNames = {}) {
     const contact = role === 'owner'
       ? `ผู้จอง: ${escapeHTML(renterNames[row.renter_id] || 'สมาชิก')}`
       : `เจ้าของ: ${escapeHTML(item.profiles?.full_name || 'สมาชิก')}`;
+    const isOwner = role === 'owner';
+    const isRenter = role === 'renter';
+    const otherUserId = isRenter ? item.owner_id : row.renter_id;
+    const milestone = (action, label) => `<button class="btn btn-primary" data-action="confirm-booking-step" data-id="${escapeHTML(row.id)}" data-step="${action}">${label}</button>`;
     const actions = [
       item.id ? `<button class="btn btn-secondary" data-action="booking-chat" data-id="${escapeHTML(row.id)}">แชตเกี่ยวกับการจอง</button>` : '',
+      `<button class="btn btn-secondary" data-action="booking-evidence" data-id="${escapeHTML(row.id)}">ดูหลักฐานภาพ</button>`,
       role === 'renter' && row.status === 'pending' ? `<button class="btn btn-danger" data-action="cancel-booking" data-id="${escapeHTML(row.id)}">ยกเลิกคำขอ</button>` : '',
       role !== 'renter' && row.status === 'pending' ? `<button class="btn btn-primary" data-action="booking-approve" data-id="${escapeHTML(row.id)}">อนุมัติ</button><button class="btn btn-danger" data-action="booking-reject" data-id="${escapeHTML(row.id)}">ปฏิเสธ</button>` : '',
-      role !== 'renter' && row.status === 'approved' && row.end_date <= formatDateInput(new Date()) ? `<button class="btn btn-primary" data-action="booking-complete" data-id="${escapeHTML(row.id)}">ยืนยันรับคืนและจบการเช่า</button>` : ''
+      isOwner && row.status === 'approved' && !row.owner_handed_over_at ? milestone('owner_handover','ยืนยันส่งมอบสินค้า') : '',
+      isRenter && row.status === 'approved' && row.owner_handed_over_at && !row.renter_received_at ? milestone('renter_received','ยืนยันว่าได้รับสินค้า') : '',
+      isRenter && row.status === 'approved' && row.renter_received_at && !row.renter_returned_at && row.end_date <= formatDateInput() ? milestone('renter_return','แจ้งว่าคืนสินค้าแล้ว') : '',
+      isOwner && row.status === 'approved' && row.renter_returned_at && !row.owner_return_received_at ? milestone('owner_return','ยืนยันได้รับสินค้าคืน') : '',
+      isOwner && row.status === 'approved' && row.owner_return_received_at ? '<span class="status-pill pending">รับคืนแล้ว · รอปิดการตรวจสอบ</span>' : '',
+      isRenter && row.status === 'completed' && !reviewedBookingIds.has(row.id) ? `<button class="btn btn-primary" data-action="review-booking" data-id="${escapeHTML(row.id)}" data-listing-id="${escapeHTML(row.listing_id)}">เขียนรีวิว</button>` : '',
+      isRenter && row.status === 'completed' && reviewedBookingIds.has(row.id) ? '<span class="status-pill approved">รีวิวแล้ว</span>' : '',
+      (isOwner || isRenter) ? `<button class="btn btn-secondary" data-action="report-booking" data-id="${escapeHTML(row.id)}" data-listing-id="${escapeHTML(row.listing_id)}" data-reported-user-id="${escapeHTML(otherUserId || '')}">รายงานปัญหา</button>` : ''
     ].filter(Boolean).join('');
-    return `<article class="account-row booking-row"><img class="booking-thumbnail" src="${escapeHTML(image)}" alt="${escapeHTML(item.title || 'รูปประกาศ')}" loading="lazy" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80'"><div class="booking-copy"><h4>${escapeHTML(item.title || 'ประกาศสินค้า')}</h4><p>${contact}</p><p>วันเช่า: ${escapeHTML(formatDateThai(row.start_date))} – ${escapeHTML(formatDateThai(row.end_date))} · ${days} วัน (นับรวมวันรับและวันคืน)</p><p>ค่าเช่า: ฿${formatBaht(dailyRate || 0)} / วัน × ${days} วัน = ฿${formatBaht(row.total_price)} · มัดจำ ${depositText}</p><p>จุดนัดรับ: ${escapeHTML(row.pickup_location || '-')} · <span class="status-pill ${escapeHTML(row.status)}">${escapeHTML(statusText(row.status))}</span></p>${row.note ? `<p>ข้อความ: ${escapeHTML(row.note)}</p>` : ''}${row.rejection_reason ? `<p>เหตุผลที่ปฏิเสธ: ${escapeHTML(row.rejection_reason)}</p>` : ''}</div><div class="account-actions">${actions}</div></article>`;
+    const milestones = [
+      ['owner_handed_over_at','เจ้าของยืนยันส่งมอบ'],
+      ['renter_received_at','ผู้เช่ายืนยันรับสินค้า'],
+      ['renter_returned_at','ผู้เช่าแจ้งคืนสินค้า'],
+      ['owner_return_received_at','เจ้าของยืนยันรับคืน']
+    ].map(([field,label]) => `<span class="milestone ${row[field] ? 'done' : ''}">${label}${row[field] ? ` · ${escapeHTML(formatTime(row[field]))}` : ' · รอดำเนินการ'}</span>`).join('');
+    const phoneMarkup = role === 'admin'
+      ? [row.renter_contact_phone?`ผู้เช่า: <a href="tel:${escapeHTML(row.renter_contact_phone)}">${escapeHTML(row.renter_contact_phone)}</a>`:'',row.owner_contact_phone?`เจ้าของ: <a href="tel:${escapeHTML(row.owner_contact_phone)}">${escapeHTML(row.owner_contact_phone)}</a>`:''].filter(Boolean).join(' · ')
+      : (role === 'owner' ? row.renter_contact_phone : row.owner_contact_phone)
+        ? `เบอร์ติดต่อคู่สัญญา: <a href="tel:${escapeHTML(role === 'owner' ? row.renter_contact_phone : row.owner_contact_phone)}">${escapeHTML(role === 'owner' ? row.renter_contact_phone : row.owner_contact_phone)}</a>`
+        : '';
+    return `<article class="account-row booking-row"><img class="booking-thumbnail" src="${escapeHTML(image)}" alt="${escapeHTML(item.title || 'รูปประกาศ')}" loading="lazy" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1497366754035-f200968a6e72?auto=format&fit=crop&w=900&q=80'"><div class="booking-copy"><h4>${escapeHTML(item.title || 'ประกาศสินค้า')}</h4><p>${contact}</p>${phoneMarkup?`<p>${phoneMarkup}</p>`:''}<p>วันเช่า: ${escapeHTML(formatDateThai(row.start_date))} – ${escapeHTML(formatDateThai(row.end_date))} · ${days} วัน (นับรวมวันรับและวันคืน)</p><p>ค่าเช่า: ฿${formatBaht(dailyRate || 0)} / วัน × ${days} วัน = ฿${formatBaht(row.total_price)} · มัดจำ ${depositText}</p><p>จุดนัดรับ: ${escapeHTML(row.pickup_location || '-')} · <span class="status-pill ${escapeHTML(row.status)}">${escapeHTML(statusText(row.status))}</span></p>${row.note ? `<p>ข้อความ: ${escapeHTML(row.note)}</p>` : ''}${row.rejection_reason ? `<p>เหตุผลที่ปฏิเสธ: ${escapeHTML(row.rejection_reason)}</p>` : ''}${row.status === 'approved' || row.status === 'completed' ? `<div class="booking-milestones" aria-label="สถานะการส่งมอบและคืนสินค้า">${milestones}</div>` : ''}</div><div class="account-actions">${actions}</div></article>`;
   }).join('')}</div></section>`).join('');
 }
 function accountShell(tab) {
   const tabs = currentIsAdmin
-    ? [['admin-overview','ภาพรวมแอดมิน'],['admin-listings','ประกาศทั้งหมด'],['admin-bookings','การจองทั้งหมด'],['admin-users','สมาชิกทั้งหมด'],['my-listings','ประกาศของฉัน'],['as-renter','รายการที่ฉันจอง'],['as-owner','คำขอที่ได้รับ'],['my-wanted','ความต้องการของฉัน'],['incoming-offers','ข้อเสนอที่ได้รับ'],['inbox','ข้อความ']]
-    : [['my-listings','ประกาศของฉัน'],['as-renter','รายการที่ฉันจอง'],['as-owner','คำขอที่ได้รับ'],['my-wanted','ความต้องการของฉัน'],['incoming-offers','ข้อเสนอที่ได้รับ'],['inbox','ข้อความ']];
+    ? [['profile','โปรไฟล์ของฉัน'],['admin-overview','ภาพรวมแอดมิน'],['admin-listings','ประกาศทั้งหมด'],['admin-bookings','การจองทั้งหมด'],['admin-payments','การชำระเงิน'],['admin-reports','รายงานปัญหา'],['admin-users','สมาชิกทั้งหมด'],['my-listings','ประกาศของฉัน'],['as-renter','รายการที่ฉันจอง'],['as-owner','คำขอที่ได้รับ'],['payments','การชำระเงินของฉัน'],['my-reports','รายงานของฉัน'],['my-wanted','ความต้องการของฉัน'],['incoming-offers','ข้อเสนอที่ได้รับ'],['inbox','ข้อความ']]
+    : [['profile','โปรไฟล์ของฉัน'],['my-listings','ประกาศของฉัน'],['as-renter','รายการที่ฉันจอง'],['as-owner','คำขอที่ได้รับ'],['payments','การชำระเงิน'],['my-reports','รายงานของฉัน'],['my-wanted','ความต้องการของฉัน'],['incoming-offers','ข้อเสนอที่ได้รับ'],['inbox','ข้อความ']];
   return `<div class="account-tabs">${tabs.map(([key,label])=>`<button class="account-tab ${tab===key?'active':''}" data-action="account-tab" data-tab="${key}" aria-pressed="${tab===key}">${label}</button>`).join('')}<button class="account-tab" data-action="logout">ออกจากระบบ</button></div><div id="accountContent"><div class="account-empty">กำลังโหลดข้อมูล…</div></div>`;
+}
+const reportCategoryLabels = {
+  item_mismatch:'สินค้าไม่ตรงรายละเอียด', cannot_contact:'ติดต่อคู่สัญญาไม่ได้',
+  handover_return:'ปัญหาการรับหรือคืนสินค้า', damaged_item:'สินค้าเสียหาย',
+  user_conduct:'พฤติกรรมผู้ใช้', other:'อื่น ๆ'
+};
+const reportStatusLabels = { pending:'รอตรวจสอบ', investigating:'กำลังตรวจสอบ', resolved:'ดำเนินการแล้ว' };
+function openAdminReportUpdate(report) {
+  openModal('จัดการรายงานปัญหา', 'บันทึกสถานะและผลการตรวจสอบ', `<form id="adminReportForm" data-id="${escapeHTML(report.id)}" data-review-id="${escapeHTML(report.review_id || '')}"><div class="form-field"><label for="adminReportStatus">สถานะ</label><select id="adminReportStatus" name="status"><option value="pending" ${report.status==='pending'?'selected':''}>รอตรวจสอบ</option><option value="investigating" ${report.status==='investigating'?'selected':''}>กำลังตรวจสอบ</option><option value="resolved" ${report.status==='resolved'?'selected':''}>ดำเนินการแล้ว</option></select></div><div class="form-field"><label for="adminReportResolution">ผลการตรวจสอบ</label><textarea id="adminReportResolution" name="resolution" maxlength="2000" placeholder="บันทึกสิ่งที่ตรวจสอบและการดำเนินการ">${escapeHTML(report.resolution || '')}</textarea></div>${report.review_id?`<label class="report-hide-review"><input type="checkbox" name="hideReview" ${report.review_hidden?'checked':''}> ซ่อนรีวิวนี้จากหน้าประกาศ</label>`:''}<div class="form-actions"><button class="btn btn-secondary" type="button" data-action="close">ยกเลิก</button><button class="btn btn-primary" type="submit">บันทึกผล</button></div></form>`);
+}
+async function updateAdminReport(form) {
+  if (!currentIsAdmin) return showToast('ไม่มีสิทธิ์จัดการรายงาน');
+  const data = new FormData(form);
+  const { error } = await supabase.rpc('admin_update_issue_report', {
+    p_report_id:form.dataset.id,
+    p_status:String(data.get('status') || ''),
+    p_resolution:String(data.get('resolution') || '').trim() || null,
+    p_hide_review:form.elements.namedItem('hideReview') ? Boolean(data.get('hideReview')) : null
+  });
+  if (error) return showToast('บันทึกผลรายงานไม่สำเร็จ: ' + friendlyError(error));
+  closeModal();
+  showToast('อัปเดตรายงานแล้ว');
+  await renderAccountTab('admin-reports');
+}
+async function renderIssueReports(out, admin = false) {
+  let query = supabase.from('issue_reports')
+    .select('id,reporter_id,booking_id,listing_id,reported_user_id,review_id,category,description,status,resolution,created_at,updated_at');
+  if (!admin) query = query.eq('reporter_id', currentSession.user.id);
+  const { data:reports, error } = await query.order('created_at', { ascending:false }).limit(100);
+  if (error) throw error;
+  if (!reports?.length) {
+    out.innerHTML = `<div class="account-empty">${admin?'ยังไม่มีรายงานปัญหาให้ตรวจสอบ':'คุณยังไม่ได้ส่งรายงานปัญหา'}</div>`;
+    return;
+  }
+  const userIds = [...new Set(reports.flatMap(report => [report.reporter_id, report.reported_user_id].filter(Boolean)))];
+  const listingIds = [...new Set(reports.map(report => report.listing_id).filter(Boolean))];
+  const bookingIds = [...new Set(reports.map(report => report.booking_id).filter(Boolean))];
+  const [profileResult, listingResult, bookingResult] = await Promise.all([
+    userIds.length ? supabase.from('profiles').select('id,full_name').in('id', userIds) : Promise.resolve({data:[],error:null}),
+    listingIds.length ? supabase.from('listings').select('id,title').in('id', listingIds) : Promise.resolve({data:[],error:null}),
+    bookingIds.length ? supabase.from('bookings').select('id,start_date,end_date,status').in('id', bookingIds) : Promise.resolve({data:[],error:null})
+  ]);
+  for (const result of [profileResult, listingResult, bookingResult]) if (result.error) throw result.error;
+  const profiles = Object.fromEntries((profileResult.data || []).map(user => [user.id, user.full_name || 'สมาชิก']));
+  const listings = Object.fromEntries((listingResult.data || []).map(listing => [listing.id, listing.title]));
+  const bookings = Object.fromEntries((bookingResult.data || []).map(booking => [booking.id, booking]));
+  const evidenceResult = await supabase.from('issue_report_evidence')
+    .select('id,report_id,storage_path').in('report_id', reports.map(report => report.id));
+  if (evidenceResult.error) throw evidenceResult.error;
+  const evidenceRows = evidenceResult.data || [];
+  const signedResult = evidenceRows.length
+    ? await supabase.storage.from(RENTAL_EVIDENCE_BUCKET).createSignedUrls(evidenceRows.map(row => row.storage_path), 1800)
+    : { data:[], error:null };
+  if (signedResult.error) throw signedResult.error;
+  const reportImages = {};
+  evidenceRows.forEach((row, index) => {
+    const url = signedResult.data?.[index]?.signedUrl;
+    if (url) (reportImages[row.report_id] ||= []).push(url);
+  });
+  out.innerHTML = `<div class="account-list">${reports.map(report => {
+    const booking = bookings[report.booking_id];
+    const target = [
+      report.listing_id ? `ประกาศ: ${escapeHTML(listings[report.listing_id] || 'ไม่พบประกาศ')}` : '',
+      booking ? `การเช่า ${formatDateThai(booking.start_date)} – ${formatDateThai(booking.end_date)}` : '',
+      report.reported_user_id ? `ผู้ใช้: ${escapeHTML(profiles[report.reported_user_id] || 'สมาชิก')}` : '',
+      report.review_id ? 'รีวิวที่ถูกรายงาน' : ''
+    ].filter(Boolean).join(' · ') || 'รายงานเกี่ยวกับผู้ใช้';
+    const images = reportImages[report.id] || [];
+    return `<article class="account-row issue-report-row"><div><h3>${escapeHTML(reportCategoryLabels[report.category] || 'รายงานปัญหา')}</h3><p>${target}</p>${admin?`<p>ผู้รายงาน: ${escapeHTML(profiles[report.reporter_id] || 'สมาชิก')}</p>`:''}<p>${escapeHTML(report.description)}</p>${images.length?`<div class="evidence-gallery">${images.map((url,index)=>`<a href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHTML(url)}" alt="รูปประกอบรายงาน ${index+1}" loading="lazy"></a>`).join('')}</div>`:''}${report.resolution?`<p><strong>ผลดำเนินการ:</strong> ${escapeHTML(report.resolution)}</p>`:''}<p>${formatTime(report.created_at)} · <span class="status-pill ${report.status==='resolved'?'approved':report.status==='investigating'?'pending':'cancelled'}">${escapeHTML(reportStatusLabels[report.status] || report.status)}</span></p></div>${admin?`<div class="account-actions"><button class="btn btn-secondary" data-action="admin-report" data-id="${escapeHTML(report.id)}">ตรวจสอบ / อัปเดต</button></div>`:''}</article>`;
+  }).join('')}</div>`;
+}
+const paymentTypeLabels = { rent:'ค่าเช่า', deposit:'เงินมัดจำ' };
+const paymentStatusLabels = {
+  unpaid:'ยังไม่แจ้งชำระ',
+  pending_verification:'รอตรวจสอบหลักฐาน',
+  paid:'ตรวจสอบหลักฐานแล้ว',
+  rejected:'หลักฐานไม่ผ่าน',
+  refund_pending:'รอตรวจสอบและบันทึกการคืนเงินจริง',
+  refunded:'ผู้ดูแลบันทึกว่าคืนเงินจริงแล้ว'
+};
+function paymentStatusClass(status) {
+  if (status === 'paid' || status === 'refunded') return 'approved';
+  if (status === 'pending_verification' || status === 'refund_pending') return 'pending';
+  return 'cancelled';
+}
+async function renderProfileSettings(out) {
+  const [profileResult, contactResult] = await Promise.all([
+    supabase.from('profiles').select('id,full_name,university,bio,avatar_url,avatar_path')
+      .eq('id', currentSession.user.id).maybeSingle(),
+    supabase.from('profile_contacts').select('phone')
+      .eq('user_id', currentSession.user.id).maybeSingle()
+  ]);
+  if (profileResult.error) throw profileResult.error;
+  if (contactResult.error) throw contactResult.error;
+  const profile = profileResult.data;
+  if (!profile) throw new Error('ไม่พบข้อมูลโปรไฟล์');
+  currentProfile = { ...currentProfile, ...profile };
+  out.innerHTML = `<section class="profile-settings"><h2>โปรไฟล์และข้อมูลติดต่อ</h2><p class="form-footnote">ชื่อ สถานศึกษา ประวัติย่อ และรูปโปรไฟล์จะแสดงแก่สมาชิกตามระบบเดิม ส่วนเบอร์โทรจะเป็นข้อมูลส่วนตัวและแสดงเฉพาะคู่สัญญาในรายการเช่า</p><form id="profileSettingsForm" data-avatar-path="${escapeHTML(profile.avatar_path || '')}"><div class="form-grid">
+    <div class="form-field"><label for="profileName">ชื่อที่ใช้แสดง *</label><input id="profileName" name="full_name" required maxlength="60" value="${escapeHTML(profile.full_name || '')}"></div>
+    <div class="form-field"><label for="profileUniversity">สถานศึกษา *</label><input id="profileUniversity" name="university" required maxlength="120" value="${escapeHTML(profile.university || '')}"></div>
+    <div class="form-field full"><label for="profileBio">แนะนำตัว <span class="hint">(ไม่บังคับ)</span></label><textarea id="profileBio" name="bio" maxlength="500" placeholder="ยังไม่ได้ระบุรายละเอียด">${escapeHTML(profile.bio || '')}</textarea></div>
+    <div class="form-field full"><label for="profilePhone">เบอร์ติดต่อส่วนตัว <span class="hint">(ไม่บังคับ)</span></label><input id="profilePhone" name="phone" type="tel" autocomplete="tel" maxlength="25" value="${escapeHTML(contactResult.data?.phone || '')}" placeholder="บันทึกไว้ให้กรอกในคำขอจองครั้งต่อไป"><small>เบอร์นี้ไม่แสดงในหน้าประกาศสาธารณะ</small></div>
+    <div class="form-field full"><label for="profileAvatar">รูปโปรไฟล์ <span class="hint">(ไม่บังคับ · JPG/PNG/WebP ไม่เกิน 5 MB)</span></label>${profile.avatar_url?`<img class="profile-avatar-preview" src="${escapeHTML(profile.avatar_url)}" alt="รูปโปรไฟล์ปัจจุบัน">`:''}<input id="profileAvatar" name="avatar" type="file" accept="image/jpeg,image/png,image/webp"><label class="checkbox-row"><input type="checkbox" name="remove_avatar"> ลบรูปโปรไฟล์ปัจจุบัน</label></div>
+  </div><div class="form-actions"><button type="submit" class="btn btn-primary">บันทึกโปรไฟล์</button></div></form></section>`;
+}
+async function saveProfileSettings(form) {
+  const data = new FormData(form);
+  const name = String(data.get('full_name') || '').trim();
+  const university = String(data.get('university') || '').trim();
+  const bio = String(data.get('bio') || '').trim() || null;
+  const rawPhone = String(data.get('phone') || '').trim();
+  const phone = rawPhone ? rawPhone.replace(/[^\d+]/g, '') : null;
+  if (!name || !university) return showToast('กรุณากรอกชื่อและสถานศึกษา');
+  if (phone && (phone.length < 7 || phone.length > 25)) return showToast('เบอร์ติดต่อต้องมีความยาว 7–25 ตัวอักษร');
+  const button = form.querySelector('button[type="submit"]');
+  if (button) { button.disabled = true; button.textContent = 'กำลังบันทึก…'; }
+  let uploadedAvatar = null;
+  let contactSaved = false;
+  try {
+    const contactResult = await supabase.from('profile_contacts').upsert({
+      user_id:currentSession.user.id, phone, updated_at:new Date().toISOString()
+    }, { onConflict:'user_id' });
+    if (contactResult.error) throw contactResult.error;
+    contactSaved = true;
+    const avatarFile = form.elements.namedItem('avatar').files?.[0];
+    if (avatarFile) uploadedAvatar = await uploadProfileAvatar(avatarFile);
+    const removeAvatar = Boolean(data.get('remove_avatar')) && !uploadedAvatar;
+    const profilePatch = {
+      full_name:name,
+      university,
+      bio,
+      ...(uploadedAvatar ? { avatar_url:uploadedAvatar.url, avatar_path:uploadedAvatar.path } : {}),
+      ...(removeAvatar ? { avatar_url:null, avatar_path:null } : {})
+    };
+    const { data:saved, error } = await supabase.from('profiles').update(profilePatch)
+      .eq('id', currentSession.user.id).select('id').maybeSingle();
+    if (error) throw error;
+    if (!saved) throw new Error('ไม่สามารถบันทึกโปรไฟล์ได้ กรุณาตรวจสอบสิทธิ์บัญชี');
+    currentProfile = { ...currentProfile, ...profilePatch };
+    updateAuthButtons();
+    const oldPath = form.dataset.avatarPath;
+    if (oldPath && (uploadedAvatar || removeAvatar)) {
+      const { error:removeError } = await supabase.storage.from(LISTING_IMAGE_BUCKET).remove([oldPath]);
+      if (removeError) console.warn('อัปเดตรูปแล้วแต่ลบรูปเก่าไม่สำเร็จ', removeError);
+    }
+    closeModal();
+    showToast('บันทึกโปรไฟล์และข้อมูลติดต่อแล้ว');
+    await refreshListings();
+    await renderAccountTab('profile');
+  } catch (error) {
+    if (uploadedAvatar) {
+      const { error:cleanupError } = await supabase.storage.from(LISTING_IMAGE_BUCKET).remove([uploadedAvatar.path]);
+      if (cleanupError) console.warn('ลบรูปโปรไฟล์ที่อัปโหลดไม่สำเร็จ', cleanupError);
+    }
+    showToast(`${contactSaved?'บันทึกเบอร์แล้ว แต่บันทึกโปรไฟล์ไม่สำเร็จ':'บันทึกโปรไฟล์ไม่สำเร็จ'}: ${friendlyError(error)}`);
+  } finally {
+    if (button?.isConnected) { button.disabled = false; button.textContent = 'บันทึกโปรไฟล์'; }
+  }
+}
+async function renderPayments(out, admin = false) {
+  let bookingRows = [];
+  let payments = [];
+  if (admin) {
+    const [paymentResult, payableBookingsResult] = await Promise.all([
+      supabase.from('booking_payments')
+        .select('id,booking_id,payer_id,payment_type,amount,status,submitted_at,reviewed_by,reviewed_at,review_note,refunded_by,refunded_at,refund_note,updated_at')
+        .order('submitted_at', { ascending:false }).limit(500),
+      supabase.from('bookings')
+        .select('id,listing_id,renter_id,status,start_date,end_date,total_price,price_per_day,deposit')
+        .in('status',['approved','completed']).order('created_at',{ascending:false}).limit(500)
+    ]);
+    if (paymentResult.error) throw paymentResult.error;
+    if (payableBookingsResult.error) throw payableBookingsResult.error;
+    payments = paymentResult.data || [];
+    const bookingIds = [...new Set([
+      ...payments.map(row => row.booking_id),
+      ...(payableBookingsResult.data || []).map(row => row.id)
+    ])];
+    const bookingResult = bookingIds.length
+      ? await supabase.from('bookings').select('id,listing_id,renter_id,status,start_date,end_date,total_price,price_per_day,deposit').in('id',bookingIds)
+      : { data:[], error:null };
+    if (bookingResult.error) throw bookingResult.error;
+    bookingRows = bookingResult.data || [];
+    const allPaymentsResult = bookingIds.length
+      ? await supabase.from('booking_payments')
+        .select('id,booking_id,payer_id,payment_type,amount,status,submitted_at,reviewed_by,reviewed_at,review_note,refunded_by,refunded_at,refund_note,updated_at')
+        .in('booking_id',bookingIds).order('submitted_at',{ascending:false})
+      : {data:[],error:null};
+    if(allPaymentsResult.error) throw allPaymentsResult.error;
+    payments = allPaymentsResult.data || [];
+  } else {
+    const [renterResult, ownedResult] = await Promise.all([
+      supabase.from('bookings').select('id,listing_id,renter_id,status,start_date,end_date,total_price,price_per_day,deposit')
+        .eq('renter_id', currentSession.user.id).order('created_at', { ascending:false }).limit(500),
+      supabase.from('listings').select('id').eq('owner_id', currentSession.user.id)
+    ]);
+    if (renterResult.error) throw renterResult.error;
+    if (ownedResult.error) throw ownedResult.error;
+    const ownedIds = (ownedResult.data || []).map(row => row.id);
+    const ownerResult = ownedIds.length
+      ? await supabase.from('bookings').select('id,listing_id,renter_id,status,start_date,end_date,total_price,price_per_day,deposit')
+        .in('listing_id', ownedIds).order('created_at', { ascending:false }).limit(500)
+      : { data:[], error:null };
+    if (ownerResult.error) throw ownerResult.error;
+    bookingRows = [...new Map([...(renterResult.data || []), ...(ownerResult.data || [])].map(row => [row.id,row])).values()];
+  }
+  const settingsResult = await supabase.from('payment_settings').select('instructions,updated_at').eq('id',1).maybeSingle();
+  if (settingsResult.error) throw settingsResult.error;
+  const instructions = settingsResult.data?.instructions || '';
+  const allBookingIds = bookingRows.map(row => row.id);
+  const relevantBookings = bookingRows.filter(row => ['approved','completed'].includes(row.status));
+  if (!admin) {
+    const paymentResult = allBookingIds.length
+      ? await supabase.from('booking_payments')
+        .select('id,booking_id,payer_id,payment_type,amount,status,submitted_at,reviewed_by,reviewed_at,review_note,refunded_by,refunded_at,refund_note,updated_at')
+        .in('booking_id', allBookingIds).order('submitted_at', { ascending:false })
+      : { data:[], error:null };
+    if (paymentResult.error) throw paymentResult.error;
+    payments = paymentResult.data || [];
+  }
+  const paymentIds = payments.map(row => row.id);
+  const eventsResult = paymentIds.length
+    ? await supabase.from('booking_payment_events').select('*').in('payment_id', paymentIds).order('created_at', { ascending:true })
+    : { data:[], error:null };
+  if (eventsResult.error) throw eventsResult.error;
+  const eventsByPayment = {};
+  for (const event of eventsResult.data || []) (eventsByPayment[event.payment_id] ||= []).push(event);
+  const listingIds = [...new Set(bookingRows.map(row => row.listing_id))];
+  const profileIds = [...new Set([
+    ...bookingRows.map(row => row.renter_id),
+    ...(eventsResult.data || []).map(event => event.actor_id).filter(Boolean)
+  ])];
+  const [listingsResult, profilesResult, usersResult] = await Promise.all([
+    listingIds.length ? supabase.from('listings').select('id,title,owner_id').in('id',listingIds) : Promise.resolve({data:[],error:null}),
+    profileIds.length ? supabase.from('profiles').select('id,full_name').in('id',profileIds) : Promise.resolve({data:[],error:null}),
+    admin ? supabase.rpc('admin_list_users') : Promise.resolve({data:[],error:null})
+  ]);
+  for (const result of [listingsResult,profilesResult,usersResult]) if (result.error) throw result.error;
+  const listingMap = Object.fromEntries((listingsResult.data || []).map(row => [row.id,row]));
+  const profileMap = Object.fromEntries((profilesResult.data || []).map(row => [row.id,row.full_name || 'สมาชิก']));
+  const userMap = Object.fromEntries((usersResult.data || []).map(row => [row.user_id,row]));
+  const paymentMap = new Map();
+  for (const payment of payments) {
+    const key = `${payment.booking_id}:${payment.payment_type}`;
+    if (!paymentMap.has(key)) paymentMap.set(key, []);
+    paymentMap.get(key).push(payment);
+  }
+  const settingsPanel = admin
+    ? `<section class="payment-settings"><h3>คำแนะนำการชำระเงิน</h3><p class="form-footnote">กรอกเฉพาะช่องทางและขั้นตอนที่ตรวจสอบแล้วจริง การตั้งค่านี้ไม่เปิดใช้ Payment Gateway</p><form id="paymentSettingsForm"><div class="form-field"><label for="paymentInstructions">คำแนะนำสำหรับผู้เช่า</label><textarea id="paymentInstructions" name="instructions" maxlength="2000" placeholder="ยังไม่ได้ตั้งค่า">${escapeHTML(instructions)}</textarea></div><div class="form-actions"><button type="submit" class="btn btn-primary">บันทึกคำแนะนำ</button>${instructions?'<button type="button" class="btn btn-danger" data-action="clear-payment-instructions">ลบคำแนะนำ</button>':''}</div></form>${settingsResult.data?`<small>อัปเดตล่าสุด ${escapeHTML(formatTime(settingsResult.data.updated_at))}</small>`:'<small>ยังไม่มีคำแนะนำการชำระเงิน</small>'}</section>`
+    : instructions
+      ? `<section class="payment-settings"><h3>คำแนะนำการชำระเงิน</h3><p>${escapeHTML(instructions).replace(/\n/g,'<br>')}</p><small>ตรวจสอบข้อมูลกับแอดมินก่อนโอนทุกครั้ง</small></section>`
+      : '<section class="payment-settings"><h3>คำแนะนำการชำระเงิน</h3><p>แอดมินยังไม่ได้ตั้งค่าช่องทางชำระเงิน จึงยังส่งหลักฐานไม่ได้ โปรดตรวจสอบอีกครั้งภายหลัง</p></section>';
+  if (admin) {
+    const adminRows = payments.slice();
+    const existingPaymentTypes = new Set(payments.map(payment => `${payment.booking_id}:${payment.payment_type}`));
+    for (const booking of relevantBookings) {
+      for (const type of ['rent','deposit']) {
+        const amount = type === 'rent' ? Number(booking.total_price) : Number(booking.deposit);
+        if (amount > 0 && !existingPaymentTypes.has(`${booking.id}:${type}`)) {
+          adminRows.push({
+            id:`unpaid:${booking.id}:${type}`,
+            booking_id:booking.id,
+            payer_id:booking.renter_id,
+            payment_type:type,
+            amount,
+            status:'unpaid',
+            submitted_at:null
+          });
+        }
+      }
+    }
+    const adminPayments = adminRows.map(payment => {
+      const booking = bookingRows.find(row => row.id === payment.booking_id);
+      const listing = booking ? listingMap[booking.listing_id] : null;
+      const user = userMap[payment.payer_id];
+      const payerName = user?.full_name || profileMap[payment.payer_id] || 'สมาชิก';
+      const search = `${payment.id} ${payment.booking_id} ${payment.payer_id} ${payerName} ${user?.email || ''}`.toLocaleLowerCase('th-TH');
+      const events = (eventsByPayment[payment.id] || []).map(event => `<li><span>${escapeHTML(paymentStatusLabels[event.to_status] || event.to_status)}</span><small>${escapeHTML(formatTime(event.created_at))} · ${escapeHTML(event.actor_id?(userMap[event.actor_id]?.full_name||profileMap[event.actor_id]||'สมาชิก'):'ระบบ')}${event.note?` · ${escapeHTML(event.note)}`:''}</small></li>`).join('');
+      const actions = [
+        payment.status === 'pending_verification' ? `<button class="btn btn-secondary" data-action="payment-proof" data-id="${escapeHTML(payment.id)}">ดูหลักฐาน</button><button class="btn btn-primary" data-action="payment-review" data-id="${escapeHTML(payment.id)}" data-status="paid">ยืนยันหลักฐาน</button><button class="btn btn-danger" data-action="payment-review" data-id="${escapeHTML(payment.id)}" data-status="rejected">ปฏิเสธ</button>` : '',
+        payment.status === 'refund_pending' ? `<button class="btn btn-primary" data-action="payment-refund" data-id="${escapeHTML(payment.id)}">บันทึกผลคืนเงิน</button>` : ''
+      ].filter(Boolean).join('');
+      return `<article class="account-row admin-payment-row" data-payment-search="${escapeHTML(search)}" data-payment-status="${escapeHTML(payment.status)}"><div><h3>${escapeHTML(paymentTypeLabels[payment.payment_type] || payment.payment_type)} · ฿${formatBaht(payment.amount)}</h3><p>ประกาศ: ${escapeHTML(listing?.title || 'ไม่พบประกาศ')} · ผู้เช่า: ${escapeHTML(payerName)} ${user?.email?`(${escapeHTML(user.email)})`:''}</p>${booking?`<p>ช่วงเช่า: ${formatDateThai(booking.start_date)} – ${formatDateThai(booking.end_date)} · สถานะจอง ${escapeHTML(statusText(booking.status))}</p>`:''}<p>รหัสจอง: <code>${escapeHTML(payment.booking_id)}</code>${payment.status==='unpaid'?'':` · รหัสหลักฐาน: <code>${escapeHTML(payment.id)}</code>`}</p><p>${payment.submitted_at?`ส่งเมื่อ ${escapeHTML(formatTime(payment.submitted_at))}`:'ยังไม่มีหลักฐาน'} · <span class="status-pill ${paymentStatusClass(payment.status)}">${escapeHTML(paymentStatusLabels[payment.status] || payment.status)}</span></p>${payment.review_note?`<p>หมายเหตุผู้ตรวจ: ${escapeHTML(payment.review_note)}</p>`:''}${payment.refund_note?`<p>บันทึกคืนเงิน: ${escapeHTML(payment.refund_note)}</p>`:''}<details class="payment-history"><summary>ประวัติการเปลี่ยนสถานะ</summary><ol>${events || '<li>ยังไม่มีประวัติ</li>'}</ol></details></div><div class="account-actions">${actions}</div></article>`;
+    }).join('');
+    out.innerHTML = `${settingsPanel}<form id="adminPaymentFilterForm" class="payment-filter"><div class="form-field"><label for="adminPaymentSearch">ค้นหารหัสจอง / รหัสผู้ใช้ / ชื่อ / อีเมล</label><input id="adminPaymentSearch" name="search" type="search" placeholder="ระบุรหัสหรือชื่อ"></div><div class="form-field"><label for="adminPaymentStatus">สถานะ</label><select id="adminPaymentStatus" name="status"><option value="">ทุกสถานะ</option>${Object.entries(paymentStatusLabels).map(([key,label])=>`<option value="${key}">${label}</option>`).join('')}</select></div><button class="btn btn-secondary" type="submit">ค้นหา</button></form><div id="adminPaymentList" class="account-list">${adminPayments || '<div class="account-empty">ยังไม่มีรายการชำระเงินในช่วงที่แสดง</div>'}</div>`;
+    return;
+  }
+  const userIsRenter = relevantBookings.some(row => row.renter_id === currentSession.user.id);
+  const bookingCards = relevantBookings.map(booking => {
+    const listing = listingMap[booking.listing_id];
+    const renter = profileMap[booking.renter_id] || 'สมาชิก';
+    const recordsFor = type => paymentMap.get(`${booking.id}:${type}`) || [];
+    const renderType = type => {
+      const history = recordsFor(type);
+      const latest = history[0];
+      const amount = type === 'rent' ? Number(booking.total_price) : (booking.deposit == null ? null : Number(booking.deposit));
+      const status = latest?.status || 'unpaid';
+      const canSubmit = userIsRenter && booking.renter_id === currentSession.user.id
+        && ['approved','completed'].includes(booking.status) && amount > 0 && !['pending_verification','paid','refund_pending','refunded'].includes(status)
+        && Boolean(instructions);
+      const historyHtml = history.map(payment => {
+        const audit = (eventsByPayment[payment.id] || []).map(event => `<li>${escapeHTML(paymentStatusLabels[event.to_status] || event.to_status)} · ${escapeHTML(formatTime(event.created_at))} · ${escapeHTML(event.actor_id?(userMap[event.actor_id]?.full_name||profileMap[event.actor_id]||'สมาชิก'):'ระบบ')}${event.note?` · ${escapeHTML(event.note)}`:''}</li>`).join('');
+        const proofAction = booking.renter_id === currentSession.user.id
+          ? `<button class="btn btn-secondary" data-action="payment-proof" data-id="${escapeHTML(payment.id)}">ดูหลักฐานที่ส่ง</button>`
+          : '';
+        return `<div class="payment-attempt"><p>หลักฐาน ${escapeHTML(formatTime(payment.submitted_at))} · <span class="status-pill ${paymentStatusClass(payment.status)}">${escapeHTML(paymentStatusLabels[payment.status] || payment.status)}</span></p>${payment.review_note?`<p>หมายเหตุ: ${escapeHTML(payment.review_note)}</p>`:''}${payment.refund_note?`<p>บันทึกการคืนเงิน: ${escapeHTML(payment.refund_note)}</p>`:''}<div class="account-actions">${proofAction}</div><details class="payment-history"><summary>ประวัติ</summary><ol>${audit}</ol></details></div>`;
+      }).join('');
+      const amountText = amount == null ? 'ไม่มีข้อมูล snapshot เงินมัดจำของรายการเดิม' : `฿${formatBaht(amount)}`;
+      const action = canSubmit
+        ? `<button class="btn btn-primary" data-action="submit-payment" data-id="${escapeHTML(booking.id)}" data-type="${type}">แนบหลักฐาน${type==='rent'?'ค่าเช่า':'เงินมัดจำ'}</button>`
+        : userIsRenter && booking.renter_id === currentSession.user.id && ['approved','completed'].includes(booking.status) && status === 'unpaid' && !instructions
+          ? '<small>ยังส่งหลักฐานไม่ได้จนกว่าแอดมินจะตั้งค่าคำแนะนำ</small>'
+          : '';
+      return `<div class="payment-type-row"><div><strong>${escapeHTML(paymentTypeLabels[type])}: ${amountText}</strong><p>สถานะ: <span class="status-pill ${paymentStatusClass(status)}">${escapeHTML(paymentStatusLabels[status])}</span></p>${historyHtml}</div><div class="account-actions">${action}</div></div>`;
+    };
+    const renterCanPay = booking.renter_id === currentSession.user.id;
+    return `<article class="account-row payment-booking-row"><div><h3>${escapeHTML(listing?.title || 'ประกาศสินค้า')}</h3><p>ผู้เช่า: ${escapeHTML(renterCanPay?'คุณ':renter)} · ${formatDateThai(booking.start_date)} – ${formatDateThai(booking.end_date)} · การจอง ${escapeHTML(statusText(booking.status))}</p><p>ค่าเช่ารวม ฿${formatBaht(booking.total_price)} · มัดจำ ${booking.deposit==null?'ไม่บันทึกข้อมูลเดิม':`฿${formatBaht(booking.deposit)}`} · ค่าบริการแพลตฟอร์ม ฿0</p></div><div class="payment-types">${renderType('rent')}${booking.deposit==null || Number(booking.deposit)>0?renderType('deposit'):'<p class="form-footnote">ไม่มีเงินมัดจำที่ต้องชำระ</p>'}</div></article>`;
+  }).join('');
+  out.innerHTML = `${settingsPanel}${bookingCards || '<div class="account-empty">ยังไม่มีรายการจองที่อนุมัติหรือเสร็จสิ้น จึงยังไม่มีข้อมูลการชำระเงิน</div>'}`;
+}
+async function openPaymentSubmission(bookingId, paymentType) {
+  if (!currentSession?.user) return openAuthModal('login');
+  const [bookingResult, settingsResult] = await Promise.all([
+    supabase.from('bookings').select('id,listing_id,renter_id,status,total_price,deposit,start_date,end_date').eq('id',bookingId).maybeSingle(),
+    supabase.from('payment_settings').select('instructions').eq('id',1).maybeSingle()
+  ]);
+  if (bookingResult.error) return showToast('โหลดรายการจองไม่ได้: ' + friendlyError(bookingResult.error));
+  if (settingsResult.error) return showToast('โหลดคำแนะนำการชำระเงินไม่ได้: ' + friendlyError(settingsResult.error));
+  const booking = bookingResult.data;
+  if (!booking || booking.renter_id !== currentSession.user.id) return showToast('ไม่พบรายการจองหรือคุณไม่มีสิทธิ์ส่งหลักฐาน');
+  if (!['approved','completed'].includes(booking.status)) return showToast('ส่งหลักฐานได้หลังเจ้าของอนุมัติการจองแล้วเท่านั้น');
+  const amount = paymentType === 'rent' ? Number(booking.total_price) : Number(booking.deposit);
+  if (paymentType === 'deposit' && booking.deposit == null) return showToast('รายการจองเดิมไม่มีข้อมูล snapshot เงินมัดจำ กรุณาติดต่อผู้ดูแล');
+  if (!Number.isFinite(amount) || amount <= 0) return showToast('ไม่มียอดที่ต้องแจ้งชำระสำหรับรายการนี้');
+  if (!settingsResult.data?.instructions) return showToast('แอดมินยังไม่ได้ตั้งค่าคำแนะนำการชำระเงิน');
+  const {data:listing,error:listingError}=await supabase.from('listings').select('title').eq('id',booking.listing_id).maybeSingle();
+  if(listingError) return showToast('โหลดประกาศไม่ได้: '+friendlyError(listingError));
+  openModal('แนบหลักฐานการชำระเงิน',`${paymentTypeLabels[paymentType]} · ${listing?.title || 'รายการจอง'}`,`<form id="paymentProofForm" data-booking-id="${escapeHTML(booking.id)}" data-type="${paymentType}"><div class="payment-settings"><h3>คำแนะนำจากแอดมิน</h3><p>${escapeHTML(settingsResult.data.instructions).replace(/\n/g,'<br>')}</p></div><p><strong>ยอด ${escapeHTML(paymentTypeLabels[paymentType])}: ฿${formatBaht(amount)}</strong></p><p class="form-footnote">การแนบสลิปเป็นเพียงการส่งหลักฐาน รอผู้ดูแลตรวจสอบก่อนสถานะจึงจะเปลี่ยน ไม่ใช่การยืนยันจากธนาคารหรือ Payment Gateway</p><div class="form-field"><label for="paymentProofFile">รูปหลักฐาน *</label><input id="paymentProofFile" name="proof" type="file" accept="image/jpeg,image/png,image/webp" required><small>JPG, PNG หรือ WebP · ไม่เกิน 5 MB</small></div><div class="form-actions"><button type="button" class="btn btn-secondary" data-action="close">ยกเลิก</button><button type="submit" class="btn btn-primary">ส่งหลักฐานเพื่อตรวจสอบ</button></div></form>`);
+}
+async function submitPaymentProof(form) {
+  if (!currentSession?.user) return openAuthModal('login');
+  const file = new FormData(form).get('proof');
+  if (!(file instanceof File) || !file.size) return showToast('กรุณาเลือกรูปหลักฐาน');
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  let path = null;
+  try {
+    path = await uploadPaymentProof(file, form.dataset.bookingId);
+    const { error } = await supabase.rpc('submit_booking_payment', {
+      p_booking_id:form.dataset.bookingId,
+      p_payment_type:form.dataset.type,
+      p_proof_path:path
+    });
+    if (error) throw error;
+  } catch (error) {
+    if (path) {
+      const { error:removeError } = await supabase.storage.from(PAYMENT_PROOF_BUCKET).remove([path]);
+      if (removeError) console.error('ลบไฟล์หลักฐานที่บันทึกไม่สำเร็จไม่สำเร็จ',removeError);
+    }
+    button.disabled = false;
+    return showToast('ส่งหลักฐานไม่สำเร็จ: ' + friendlyError(error));
+  }
+  closeModal();
+  showToast('ส่งหลักฐานแล้ว · สถานะรอตรวจสอบ ยังไม่ถือว่าชำระสำเร็จ');
+  await renderAccountTab('payments');
+  await refreshNotificationCount();
+}
+async function openPaymentProof(paymentId) {
+  if (!currentSession?.user) return openAuthModal('login');
+  const {data:path,error}=await supabase.rpc('booking_payment_proof_path',{p_payment_id:paymentId});
+  if(error) return showToast('โหลดหลักฐานไม่สำเร็จ: '+friendlyError(error));
+  if(!path) return showToast('ไม่พบหลักฐานนี้');
+  const {data,error:signError}=await supabase.storage.from(PAYMENT_PROOF_BUCKET).createSignedUrl(path,300);
+  if(signError) return showToast('เปิดรูปหลักฐานไม่สำเร็จ: '+friendlyError(signError));
+  openModal('หลักฐานการชำระเงิน','ลิงก์ส่วนตัวนี้หมดอายุใน 5 นาที',`<img class="payment-proof-image" src="${escapeHTML(data.signedUrl)}" alt="หลักฐานการชำระเงิน">`);
+}
+async function reviewPayment(form) {
+  if(!currentIsAdmin) return showToast('ไม่มีสิทธิ์ตรวจสอบการชำระเงิน');
+  const data=new FormData(form);
+  const {error}=await supabase.rpc('admin_review_booking_payment',{
+    p_payment_id:form.dataset.id,
+    p_status:form.dataset.status,
+    p_note:String(data.get('note')||'').trim()||null
+  });
+  if(error) return showToast('บันทึกผลตรวจสอบไม่สำเร็จ: '+friendlyError(error));
+  closeModal();
+  showToast(form.dataset.status==='paid'?'บันทึกผลตรวจหลักฐานแล้ว':'ปฏิเสธหลักฐานพร้อมเหตุผลแล้ว');
+  await renderAccountTab('admin-payments');
+}
+function openPaymentReview(paymentId,status) {
+  if(!['paid','rejected'].includes(status)) return;
+  openModal(status==='paid'?'ยืนยันผลตรวจหลักฐาน':'ปฏิเสธหลักฐาน','การยืนยันนี้เป็นผลตรวจโดยแอดมิน ไม่ใช่การตรวจจาก Payment Gateway',`<form id="paymentReviewForm" data-id="${escapeHTML(paymentId)}" data-status="${status}"><div class="form-field"><label for="paymentReviewNote">${status==='rejected'?'เหตุผลที่ไม่ผ่าน (จำเป็น)':'หมายเหตุการตรวจสอบ (ไม่บังคับ)'}</label><textarea id="paymentReviewNote" name="note" maxlength="1000" ${status==='rejected'?'required minlength="5"':''} placeholder="${status==='rejected'?'ระบุสาเหตุและสิ่งที่ควรแก้ไข':''}"></textarea></div><div class="form-actions"><button type="button" class="btn btn-secondary" data-action="close">ยกเลิก</button><button type="submit" class="btn ${status==='paid'?'btn-primary':'btn-danger'}">${status==='paid'?'บันทึกว่าตรวจสอบแล้ว':'ยืนยันปฏิเสธ'}</button></div></form>`);
+}
+function openDepositRefund(paymentId) {
+  if(!currentIsAdmin) return showToast('ไม่มีสิทธิ์จัดการคืนเงิน');
+  openModal('บันทึกผลคืนเงินมัดจำ','ต้องดำเนินการคืนเงินจริงนอกระบบให้เสร็จก่อน แล้วจึงบันทึกผลนี้',`<form id="depositRefundForm" data-id="${escapeHTML(paymentId)}"><label class="report-hide-review"><input type="checkbox" name="transferCompleted" required> ยืนยันว่าได้ดำเนินการคืนเงินจริงแล้ว</label><div class="form-field"><label for="depositRefundNote">หมายเหตุ / เลขอ้างอิงที่ไม่ใช่ข้อมูลลับ *</label><textarea id="depositRefundNote" name="note" required minlength="5" maxlength="1000" placeholder="บันทึกวันเวลาและ reference ที่ไม่ใช่เลขบัญชีหรือข้อมูลลับ"></textarea></div><p class="form-footnote">ระบบจะบันทึกผู้ดำเนินการและเวลา แต่ไม่ได้โอนเงินจริง</p><div class="form-actions"><button type="button" class="btn btn-secondary" data-action="close">ยกเลิก</button><button type="submit" class="btn btn-primary">บันทึกผลคืนเงินจริง</button></div></form>`);
+}
+async function recordDepositRefund(form) {
+  if(!currentIsAdmin) return showToast('ไม่มีสิทธิ์จัดการคืนเงิน');
+  const data=new FormData(form);
+  const {error}=await supabase.rpc('admin_record_deposit_refund',{
+    p_payment_id:form.dataset.id,
+    p_note:String(data.get('note')||'').trim(),
+    p_transfer_completed:data.get('transferCompleted')==='on'
+  });
+  if(error) return showToast('บันทึกการคืนเงินไม่สำเร็จ: '+friendlyError(error));
+  closeModal();
+  showToast('บันทึกผลคืนเงินมัดจำแล้ว');
+  await renderAccountTab('admin-payments');
+}
+async function savePaymentInstructions(form,instructionsOverride=null) {
+  if(!currentIsAdmin) return showToast('ไม่มีสิทธิ์ตั้งค่าการชำระเงิน');
+  const instructions=instructionsOverride ?? String(new FormData(form).get('instructions')||'');
+  const {error}=await supabase.rpc('admin_update_payment_instructions',{p_instructions:instructions});
+  if(error) return showToast('บันทึกคำแนะนำไม่สำเร็จ: '+friendlyError(error));
+  showToast(instructions.trim()?'บันทึกคำแนะนำการชำระเงินแล้ว':'ลบคำแนะนำการชำระเงินแล้ว');
+  await renderAccountTab('admin-payments');
+}
+function filterAdminPayments(form) {
+  const data=new FormData(form);
+  const search=String(data.get('search')||'').trim().toLocaleLowerCase('th-TH');
+  const status=String(data.get('status')||'');
+  const rows=$$('#adminPaymentList .admin-payment-row');
+  let visible=0;
+  for(const row of rows) {
+    const matches=(!search||row.dataset.paymentSearch.includes(search))&&(!status||row.dataset.paymentStatus===status);
+    row.hidden=!matches;
+    if(matches) visible++;
+  }
+  const empty=$('#adminPaymentList .account-empty');
+  if(!visible&&!empty) $('#adminPaymentList').insertAdjacentHTML('beforeend','<div class="account-empty" data-filter-empty>ไม่พบรายการที่ตรงกับตัวกรอง</div>');
+  if(visible) $('#adminPaymentList [data-filter-empty]')?.remove();
 }
 function openAccountDashboard(tab=currentIsAdmin?'admin-overview':'my-listings') {
   if (!liveMode) return openAuthModal('login');
   if (!currentSession?.user) return openAuthModal('login');
   accountTab = tab;
   const name = currentProfile?.full_name || currentSession.user.user_metadata?.full_name || currentSession.user.email || 'สมาชิก';
-  openModal(currentIsAdmin ? 'แผงควบคุมแอดมิน' : 'บัญชีของฉัน', `สวัสดี ${name} · ${currentIsAdmin?'จัดการข้อมูลแพลตฟอร์ม':'จัดการประกาศและคำขอจอง'}`, accountShell(tab), true);
+  openModal(tab === 'profile' ? 'โปรไฟล์ของฉัน' : currentIsAdmin ? 'แผงควบคุมแอดมิน' : 'บัญชีของฉัน', `สวัสดี ${name} · ${currentIsAdmin?'จัดการข้อมูลแพลตฟอร์ม':'จัดการประกาศและคำขอจอง'}`, accountShell(tab), true);
   renderAccountTab(tab);
 }
 async function renderAdminTab(tab, out) {
@@ -1376,6 +1999,14 @@ async function renderAdminTab(tab, out) {
     out.innerHTML=renderBookingRows(rows,itemMap,'admin',renterNames);
     return;
   }
+  if (tab === 'admin-reports') {
+    await renderIssueReports(out, true);
+    return;
+  }
+  if (tab === 'admin-payments') {
+    await renderPayments(out, true);
+    return;
+  }
   out.innerHTML='<div class="account-empty">ไม่พบหน้าจัดการที่ต้องการ</div>';
 }
 async function renderAccountTab(tab) {
@@ -1387,6 +2018,9 @@ async function renderAccountTab(tab) {
   try {
     if (tab.startsWith('admin-')) { await renderAdminTab(tab, out); return; }
     if (tab === 'inbox') { await refreshConversationList(); return; }
+    if (tab === 'my-reports') { await renderIssueReports(out); return; }
+    if (tab === 'profile') { await renderProfileSettings(out); return; }
+    if (tab === 'payments') { await renderPayments(out); return; }
     if (tab === 'my-wanted') {
       const { data:requests, error } = await supabase.from('wanted_requests')
         .select('id,title,category,budget_per_day,requested_date,duration,pickup_zone,status,created_at')
@@ -1440,7 +2074,10 @@ async function renderAccountTab(tab) {
       const {data:listings,error:listingError}=await supabase.from('listings').select('id,title,price_per_day,deposit,location,image_url,owner_id,profiles!listings_owner_id_fkey(full_name)').in('id',itemIds);
       if(listingError) throw listingError;
       const listingsMap=Object.fromEntries((listings||[]).map(item=>[item.id,item]));
-      out.innerHTML=renderBookingRows(rows,listingsMap,'renter'); return;
+      const {data:reviews,error:reviewError}=await supabase.from('rental_reviews').select('booking_id').eq('reviewer_id',uid).in('booking_id',rows.map(row=>row.id));
+      if(reviewError) throw reviewError;
+      const reviewedBookingIds=new Set((reviews||[]).map(review=>review.booking_id));
+      out.innerHTML=renderBookingRows(rows,listingsMap,'renter',{},reviewedBookingIds); return;
     }
     const {data:myListings,error:listError}=await supabase.from('listings').select('id').eq('owner_id',uid);
     if(listError) throw listError;
@@ -1481,16 +2118,71 @@ async function processBookingDecision(id,status,reason=null) {
   if ($('#accountContent')) await renderAccountTab(accountTab);
   else openAccountDashboard(accountTab);
 }
-async function completeBooking(id) {
-  if (!confirm('ยืนยันว่าได้รับของคืนแล้วและจบการเช่านี้ใช่ไหม? การเช่าที่เสร็จสิ้นจะไม่สามารถเปิดกลับได้')) return;
+async function confirmBookingStep(id, step) {
+  const labels = {
+    owner_handover:'ยืนยันว่าคุณได้ส่งมอบสินค้าให้ผู้เช่าแล้ว',
+    renter_received:'ยืนยันว่าคุณได้รับสินค้าแล้ว',
+    renter_return:'ยืนยันว่าคุณได้คืนสินค้าให้เจ้าของแล้ว',
+    owner_return:'ยืนยันว่าคุณได้รับสินค้าคืนแล้ว'
+  };
+  if (!labels[step]) return;
+  openModal(labels[step], 'แนบรูปประกอบได้หากต้องการ โดยการยืนยันจะบันทึกเวลาให้ทั้งสองฝ่ายเห็น', `<form id="bookingEvidenceForm" data-id="${escapeHTML(id)}" data-step="${escapeHTML(step)}"><div class="form-field"><label for="bookingEvidenceFiles">รูปประกอบ <span class="hint">(ไม่บังคับ · สูงสุด 5 รูป รูปละไม่เกิน 5 MB)</span></label><input id="bookingEvidenceFiles" name="evidence" type="file" accept="image/jpeg,image/png,image/webp" multiple></div><p class="form-footnote">ยืนยันเฉพาะเมื่อเหตุการณ์เกิดขึ้นจริง หลักฐานที่แนบจะมองเห็นได้เฉพาะคู่สัญญาและแอดมิน</p><div class="form-actions"><button class="btn btn-secondary" type="button" data-action="close">ยกเลิก</button><button class="btn btn-primary" type="submit">ยืนยันขั้นตอน</button></div></form>`);
+}
+async function submitBookingEvidence(form) {
+  if (form.dataset.submitting === 'true') return;
+  const id = form.dataset.id;
+  const step = form.dataset.step;
+  const files = Array.from(form.elements.namedItem('evidence').files || []);
+  if (files.length > 5) return showToast('แนบภาพได้ไม่เกิน 5 รูปต่อขั้นตอน');
+  try { files.forEach(getImageExtension); }
+  catch (error) { return showToast(error.message); }
+  const button = form.querySelector('button[type="submit"]');
+  form.dataset.submitting = 'true';
+  if (button) { button.disabled = true; button.textContent = 'กำลังบันทึก…'; }
   try {
-    const {error}=await supabase.rpc('complete_booking',{p_booking_id:id});
-    if(error) return showToast('ยืนยันการคืนของไม่สำเร็จ: '+friendlyError(error));
-  } catch(error) {
-    return showToast('ยืนยันการคืนของไม่สำเร็จ: '+friendlyError(error));
+    for (const file of files) {
+      const path = await uploadRentalEvidence(file, `booking/${id}/${step}/${currentSession.user.id}/${crypto.randomUUID()}`);
+      const { error } = await supabase.rpc('attach_booking_evidence', {
+        p_booking_id:id, p_milestone:step, p_storage_path:path
+      });
+      if (error) {
+        const { error:cleanupError } = await supabase.storage.from(RENTAL_EVIDENCE_BUCKET).remove([path]);
+        if (cleanupError) console.warn('ลบหลักฐานการเช่าที่แนบไม่สำเร็จ', cleanupError);
+        throw error;
+      }
+    }
+    const { error } = await supabase.rpc('confirm_booking_milestone', {
+      p_booking_id:id, p_action:step
+    });
+    if (error) throw error;
+    closeModal();
+    showToast(step === 'owner_return' ? 'บันทึกการรับคืนแล้ว' : 'บันทึกการยืนยันแล้ว');
+    await renderAccountTab(accountTab);
+  } catch (error) {
+    form.dataset.submitting = 'false';
+    if (button) { button.disabled = false; button.textContent = 'ยืนยันขั้นตอน'; }
+    showToast('บันทึกการยืนยันไม่สำเร็จ: ' + friendlyError(error));
   }
-  showToast('ยืนยันรับคืนและจบการเช่าแล้ว');
-  await renderAccountTab(accountTab);
+}
+async function openBookingEvidence(bookingId) {
+  const { data, error } = await supabase.from('booking_evidence')
+    .select('id,milestone,uploaded_by,storage_path,created_at')
+    .eq('booking_id', bookingId).order('created_at', { ascending:true });
+  if (error) return showToast('โหลดหลักฐานภาพไม่สำเร็จ: ' + friendlyError(error));
+  if (!data?.length) {
+    openModal('หลักฐานภาพการเช่า', 'ยังไม่มีรูปแนบในขั้นตอนรับหรือคืนสินค้า', '<div class="account-empty">ยังไม่มีหลักฐานภาพ</div>');
+    return;
+  }
+  const paths = data.map(row => row.storage_path);
+  const { data:signed, error:signedError } = await supabase.storage.from(RENTAL_EVIDENCE_BUCKET)
+    .createSignedUrls(paths, 1800);
+  if (signedError) return showToast('เปิดหลักฐานภาพไม่สำเร็จ: ' + friendlyError(signedError));
+  const labels = { owner_handover:'เจ้าของส่งมอบ', renter_received:'ผู้เช่ารับสินค้า', renter_return:'ผู้เช่าแจ้งคืน', owner_return:'เจ้าของรับคืน' };
+  const images = data.map((row,index) => {
+    const url = signed?.[index]?.signedUrl;
+    return url ? `<figure><a href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer"><img src="${escapeHTML(url)}" alt="หลักฐาน ${escapeHTML(labels[row.milestone] || row.milestone)}"></a><figcaption>${escapeHTML(labels[row.milestone] || row.milestone)} · ${escapeHTML(formatTime(row.created_at))}</figcaption></figure>` : '';
+  }).join('');
+  openModal('หลักฐานภาพการเช่า', 'แสดงรูปที่แนบโดยคู่สัญญาในรายการนี้', `<div class="evidence-gallery">${images}</div>`);
 }
 async function respondToOffer(id, status) {
   const { error } = await supabase.rpc('respond_to_wanted_offer', { p_offer_id:id, p_status:status });
@@ -1590,7 +2282,30 @@ document.addEventListener('click', async event => {
   else if(action==='booking-approve') await processBookingDecision(id,'approved');
   else if(action==='booking-reject') openBookingRejection(id);
   else if(action==='booking-reject-cancel') { closeModal(); openAccountDashboard(accountTab); }
-  else if(action==='booking-complete') await completeBooking(id);
+  else if(action==='confirm-booking-step') await confirmBookingStep(id,actionEl.dataset.step);
+  else if(action==='booking-evidence') await openBookingEvidence(id);
+  else if(action==='submit-payment') await openPaymentSubmission(id,actionEl.dataset.type);
+  else if(action==='payment-proof') await openPaymentProof(id);
+  else if(action==='payment-review') openPaymentReview(id,actionEl.dataset.status);
+  else if(action==='payment-refund') openDepositRefund(id);
+  else if(action==='clear-payment-instructions') await savePaymentInstructions(null,'');
+  else if(action==='review-booking') openReviewForm(id,actionEl.dataset.listingId);
+  else if(action==='report-booking') openReportForm({bookingId:id,listingId:actionEl.dataset.listingId,reportedUserId:actionEl.dataset.reportedUserId});
+  else if(action==='report-listing') openReportForm({listingId:id,reportedUserId:actionEl.dataset.ownerId});
+  else if(action==='report-review') openReportForm({reviewId:id});
+  else if(action==='admin-report') {
+    const {data,error}=await supabase.from('issue_reports').select('*').eq('id',id).maybeSingle();
+    if(error) showToast('โหลดรายงานไม่สำเร็จ: '+friendlyError(error));
+    else if(!data) showToast('ไม่พบรายงานนี้');
+    else {
+      if(data.review_id) {
+        const {data:review,error:reviewError}=await supabase.from('rental_reviews').select('is_hidden').eq('id',data.review_id).maybeSingle();
+        if(reviewError) return showToast('โหลดสถานะรีวิวไม่สำเร็จ: '+friendlyError(reviewError));
+        data.review_hidden=Boolean(review?.is_hidden);
+      }
+      openAdminReportUpdate(data);
+    }
+  }
   else if(action==='cancel-booking') await cancelBooking(id);
   else if(action==='toggle-listing') await manageListing(id,'toggle',actionEl.dataset.available==='true');
   else if(action==='delete-listing') await manageListing(id,'delete',false);
@@ -1609,6 +2324,16 @@ document.addEventListener('submit',event=>{
     closeModal();
     processBookingDecision(id,'rejected',reason);
   }
+  if(event.target.id==='issueReportForm'){event.preventDefault();submitIssueReport(event.target);}
+  if(event.target.id==='profileSettingsForm'){event.preventDefault();saveProfileSettings(event.target);}
+  if(event.target.id==='bookingEvidenceForm'){event.preventDefault();submitBookingEvidence(event.target);}
+  if(event.target.id==='rentalReviewForm'){event.preventDefault();submitRentalReview(event.target);}
+  if(event.target.id==='adminReportForm'){event.preventDefault();updateAdminReport(event.target);}
+  if(event.target.id==='paymentProofForm'){event.preventDefault();submitPaymentProof(event.target);}
+  if(event.target.id==='paymentReviewForm'){event.preventDefault();reviewPayment(event.target);}
+  if(event.target.id==='depositRefundForm'){event.preventDefault();recordDepositRefund(event.target);}
+  if(event.target.id==='paymentSettingsForm'){event.preventDefault();savePaymentInstructions(event.target);}
+  if(event.target.id==='adminPaymentFilterForm'){event.preventDefault();filterAdminPayments(event.target);}
   if(event.target.id==='authForm'){event.preventDefault();handleAuthSubmit(event.target);}
   if(event.target.id==='offerForm'){event.preventDefault();handleOfferSubmit(event.target);}
   if(event.target.id==='messageForm'){event.preventDefault();sendMessage(event.target);}
@@ -1624,7 +2349,7 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape')closeModal();});
 ['#openRequestTop','#openRequestHero','#openRequestMain','#openRequestMobile'].forEach(sel=>$(sel)?.addEventListener('click',openRequestForm));
 ['#openListingTop','#openListingMobile'].forEach(sel=>$(sel)?.addEventListener('click',()=>openListingForm()));
 $('#openAuthTop')?.addEventListener('click',()=>openAuthModal('login'));
-$('#openAccountTop')?.addEventListener('click',()=>openAccountDashboard());
+$('#openAccountTop')?.addEventListener('click',()=>openAccountDashboard('profile'));
 $('#closeChatDock')?.addEventListener('click',closeChatDock);
 $('#messageImage')?.addEventListener('change', event => {
   const file = event.target.files?.[0];

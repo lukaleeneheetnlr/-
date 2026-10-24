@@ -114,7 +114,7 @@
     .account-empty{padding:24px;border:1px dashed #d7dfd4;border-radius:14px;text-align:center;color:var(--muted);font-size:13px}
     .btn-danger{background:#fff0ef;color:#9b3530;border:1px solid #f1cfcc}
     @media(max-width:850px){.nav-actions{gap:6px}.nav-actions .btn{padding:9px 12px;font-size:12px}.account-row{grid-template-columns:1fr}.account-actions{justify-content:flex-start}}
-    @media(max-width:700px){.nav-actions #openRequestTop,.nav-actions #openAuthTop,.nav-actions #openAccountTop{display:none}.nav-actions #openListingTop{padding:9px 12px}}
+    @media(max-width:700px){.nav-actions #openRequestTop,.nav-actions #openAuthTop{display:none}.nav-actions #openListingTop{padding:9px 12px}}
     .admin-stat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:4px 0 16px}.admin-stat{padding:18px;border:1px solid #e3eae0;border-radius:17px;background:#f6f8f2;display:flex;flex-direction:column;gap:8px}.admin-stat span{font-size:12px;color:var(--muted)}.admin-stat strong{font-size:30px;line-height:1.1;font-family:Manrope,'IBM Plex Sans Thai',sans-serif;color:var(--green-dark)}.admin-welcome{grid-template-columns:1fr;margin-top:12px;background:#fffdf7}.admin-shortcuts{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}.admin-shortcuts .btn{white-space:normal}@media(max-width:700px){.admin-stat-grid{grid-template-columns:1fr 1fr}.admin-stat:first-child{grid-column:1/-1}.admin-stat strong{font-size:25px}.account-row{grid-template-columns:1fr}.account-actions{justify-content:flex-start}}
   </style>
   <link rel="stylesheet" href="/src/styles.css" />
@@ -128,7 +128,7 @@
       </nav>
       <div class="nav-actions">
         <button class="btn btn-secondary" id="openAuthTop">เข้าสู่ระบบ</button>
-        <button class="btn btn-secondary" id="openAccountTop" hidden>บัญชีของฉัน</button>
+        <button class="btn btn-secondary nav-profile-button" id="openAccountTop" aria-label="เปิดโปรไฟล์ของฉัน" title="โปรไฟล์ของฉัน" hidden>โปรไฟล์ของฉัน</button>
         <button class="btn btn-secondary" id="openInboxTop" data-action="open-inbox" hidden>ข้อความ</button>
         <button class="icon-btn notification-nav" id="openNotificationsTop" data-action="open-notifications" aria-label="การแจ้งเตือน" title="การแจ้งเตือน" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="notification-count" id="notificationCount" hidden>0</span></button>
         <button class="btn btn-secondary" id="openRequestTop">＋ แจ้งสิ่งที่ต้องการ</button>
