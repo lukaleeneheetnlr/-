@@ -1,19 +1,45 @@
 -- Adds private image and item-card messages without changing existing chat rows or policies.
+begin;
+
 alter table public.messages
   add column if not exists message_type text not null default 'text',
   add column if not exists image_path text,
   add column if not exists listing_id uuid references public.listings(id) on delete set null,
   add column if not exists wanted_request_id uuid references public.wanted_requests(id) on delete set null;
 
-alter table public.messages
-  drop constraint if exists messages_type_payload_check;
-alter table public.messages
-  add constraint messages_type_payload_check check (
-    (message_type = 'text' and image_path is null and listing_id is null and wanted_request_id is null)
-    or (message_type = 'image' and image_path is not null and listing_id is null and wanted_request_id is null)
-    or (message_type = 'listing' and image_path is null and wanted_request_id is null)
-    or (message_type = 'wanted_request' and image_path is null and listing_id is null)
-  );
+do $$
+begin
+  if exists (
+    select 1 from public.messages
+    where message_type is null or not (
+      (message_type = 'text' and image_path is null and listing_id is null and wanted_request_id is null)
+      or (message_type = 'image' and image_path is not null and listing_id is null and wanted_request_id is null)
+      or (message_type = 'listing' and image_path is null and wanted_request_id is null)
+      or (message_type = 'wanted_request' and image_path is null and listing_id is null)
+    )
+  ) then
+    raise exception 'Existing messages do not satisfy messages_type_payload_check; inspect them before replacing the constraint';
+  end if;
+end;
+$$;
+alter table public.messages alter column message_type set not null;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.messages'::regclass
+      and conname = 'messages_type_payload_check'
+  ) then
+    alter table public.messages
+      add constraint messages_type_payload_check check (
+        (message_type = 'text' and image_path is null and listing_id is null and wanted_request_id is null)
+        or (message_type = 'image' and image_path is not null and listing_id is null and wanted_request_id is null)
+        or (message_type = 'listing' and image_path is null and wanted_request_id is null)
+        or (message_type = 'wanted_request' and image_path is null and listing_id is null)
+      );
+  end if;
+end;
+$$;
 
 create or replace function public.validate_message()
 returns trigger
@@ -74,10 +100,20 @@ values (
   5242880,
   array['image/jpeg', 'image/png', 'image/webp', 'image/gif']
 )
-on conflict (id) do update
-  set public = false,
-      file_size_limit = excluded.file_size_limit,
-      allowed_mime_types = excluded.allowed_mime_types;
+on conflict (id) do nothing;
+do $$
+begin
+  if not exists (
+    select 1 from storage.buckets
+    where id = 'conversation-images'
+      and public = false
+      and file_size_limit <= 5242880
+      and allowed_mime_types = array['image/jpeg','image/png','image/webp','image/gif']::text[]
+  ) then
+    raise exception 'Existing conversation-images bucket settings are incompatible; review them before continuing';
+  end if;
+end;
+$$;
 
 drop policy if exists "Conversation participants read private chat images" on storage.objects;
 create policy "Conversation participants read private chat images" on storage.objects
@@ -143,3 +179,5 @@ begin
   return new;
 end;
 $$;
+
+commit;

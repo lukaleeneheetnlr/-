@@ -5,6 +5,23 @@
 
 begin;
 
+do $$
+begin
+  if exists (
+    select 1 from public.notifications
+    where kind not in (
+      'booking_requested','booking_approved','booking_rejected','booking_cancelled',
+      'booking_completed','booking_handover','booking_received','booking_returned',
+      'review_received','report_updated','chat_message','offer_submitted',
+      'offer_accepted','offer_declined','request_closed','payment_submitted',
+      'payment_verified','payment_rejected','deposit_refund_pending','deposit_refunded',
+      'payout_pending','payout_paid','meeting_point_updated'
+    )
+  ) then
+    raise exception 'Existing notifications.kind values are outside the supported set; inspect them with diagnose_migration.sql before replacing the constraint';
+  end if;
+end;
+$$;
 alter table public.notifications
   drop constraint if exists notifications_kind_check;
 alter table public.notifications
@@ -25,16 +42,45 @@ alter table public.bookings
   add column if not exists meeting_points_updated_by uuid references public.profiles(id) on delete set null,
   add column if not exists meeting_points_updated_at timestamptz;
 
-alter table public.bookings drop constraint if exists bookings_pickup_point_valid;
-alter table public.bookings add constraint bookings_pickup_point_valid check (
-  (pickup_point_lat is null and pickup_point_lng is null)
-  or (pickup_point_lat between -90 and 90 and pickup_point_lng between -180 and 180)
-);
-alter table public.bookings drop constraint if exists bookings_return_point_valid;
-alter table public.bookings add constraint bookings_return_point_valid check (
-  (return_point_lat is null and return_point_lng is null)
-  or (return_point_lat between -90 and 90 and return_point_lng between -180 and 180)
-);
+do $$
+begin
+  if exists (
+    select 1 from public.bookings
+    where (pickup_point_lat is null) <> (pickup_point_lng is null)
+      or (return_point_lat is null) <> (return_point_lng is null)
+      or pickup_point_lat not between -90 and 90
+      or pickup_point_lng not between -180 and 180
+      or return_point_lat not between -90 and 90
+      or return_point_lng not between -180 and 180
+  ) then
+    raise exception 'Existing booking meeting points are invalid; inspect them before replacing coordinate constraints';
+  end if;
+end;
+$$;
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.bookings'::regclass
+      and conname = 'bookings_pickup_point_valid'
+  ) then
+    alter table public.bookings add constraint bookings_pickup_point_valid check (
+      (pickup_point_lat is null and pickup_point_lng is null)
+      or (pickup_point_lat between -90 and 90 and pickup_point_lng between -180 and 180)
+    );
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.bookings'::regclass
+      and conname = 'bookings_return_point_valid'
+  ) then
+    alter table public.bookings add constraint bookings_return_point_valid check (
+      (return_point_lat is null and return_point_lng is null)
+      or (return_point_lat between -90 and 90 and return_point_lng between -180 and 180)
+    );
+  end if;
+end;
+$$;
 
 create or replace function public.set_booking_meeting_points(
   p_booking_id uuid,

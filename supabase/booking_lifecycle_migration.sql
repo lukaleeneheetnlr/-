@@ -10,11 +10,31 @@ alter table public.bookings
   add column if not exists deposit numeric(12,2),
   add column if not exists request_key uuid;
 
+do $$
+begin
+  if exists (
+    select 1 from public.bookings
+    where request_key is not null
+    group by request_key
+    having count(*) > 1
+  ) then
+    raise exception 'Duplicate non-NULL bookings.request_key values exist; inspect them before creating bookings_request_key_unique';
+  end if;
+end;
+$$;
 create unique index if not exists bookings_request_key_unique
   on public.bookings(request_key) where request_key is not null;
 
 do $$
 begin
+  if exists (
+    select 1 from public.bookings
+    where (rejection_reason is not null and char_length(rejection_reason) > 500)
+      or (price_per_day is not null and price_per_day <= 0)
+      or (deposit is not null and deposit < 0)
+  ) then
+    raise exception 'Existing booking snapshot values violate the intended checks; inspect them before adding lifecycle constraints';
+  end if;
   if not exists (
     select 1 from pg_constraint
     where conrelid = 'public.bookings'::regclass
@@ -30,6 +50,19 @@ begin
     where conrelid = 'public.bookings'::regclass
       and conname = 'approved_dates_do_not_overlap'
   ) then
+    if exists (
+      select 1
+      from public.bookings a
+      join public.bookings b
+        on b.listing_id = a.listing_id
+       and b.id > a.id
+       and b.status = 'approved'
+       and daterange(b.start_date, b.end_date, '[]')
+           && daterange(a.start_date, a.end_date, '[]')
+      where a.status = 'approved'
+    ) then
+      raise exception 'Existing approved bookings overlap; inspect them before adding approved_dates_do_not_overlap';
+    end if;
     alter table public.bookings
       add constraint approved_dates_do_not_overlap
       exclude using gist (
@@ -60,13 +93,33 @@ begin
 end;
 $$;
 
+do $$
+begin
+  if exists (
+    select 1 from public.notifications
+    where kind not in (
+      'booking_requested','booking_approved','booking_rejected','booking_cancelled',
+      'booking_completed','booking_handover','booking_received','booking_returned',
+      'review_received','report_updated','chat_message','offer_submitted',
+      'offer_accepted','offer_declined','request_closed','payment_submitted',
+      'payment_verified','payment_rejected','deposit_refund_pending','deposit_refunded',
+      'payout_pending','payout_paid','meeting_point_updated'
+    )
+  ) then
+    raise exception 'Existing notifications.kind values are outside the supported set; inspect them with diagnose_migration.sql before replacing the constraint';
+  end if;
+end;
+$$;
 alter table public.notifications
   drop constraint if exists notifications_kind_check;
 alter table public.notifications
   add constraint notifications_kind_check check (kind in (
     'booking_requested','booking_approved','booking_rejected','booking_cancelled',
-    'booking_completed','chat_message','offer_submitted','offer_accepted',
-    'offer_declined','request_closed'
+    'booking_completed','booking_handover','booking_received','booking_returned',
+    'review_received','report_updated','chat_message','offer_submitted',
+    'offer_accepted','offer_declined','request_closed','payment_submitted',
+    'payment_verified','payment_rejected','deposit_refund_pending','deposit_refunded',
+    'payout_pending','payout_paid','meeting_point_updated'
   ));
 
 -- Booking state and pricing must only be changed by the validated RPCs below.

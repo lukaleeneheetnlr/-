@@ -2,6 +2,8 @@
 -- Run the ENTIRE file in Supabase Dashboard > SQL Editor.
 -- Assumes the base Campus Sharing Hub schema is already installed.
 
+begin;
+
 -- Add columns without dropping existing data.
 alter table public.profiles
   add column if not exists is_admin boolean not null default false;
@@ -121,10 +123,20 @@ grant execute on function public.admin_list_users() to authenticated;
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('listing-images', 'listing-images', true, 5242880,
         array['image/jpeg','image/png','image/webp','image/gif'])
-on conflict (id) do update set
-  public = excluded.public,
-  file_size_limit = excluded.file_size_limit,
-  allowed_mime_types = excluded.allowed_mime_types;
+on conflict (id) do nothing;
+do $$
+begin
+  if not exists (
+    select 1 from storage.buckets
+    where id = 'listing-images'
+      and public = true
+      and file_size_limit <= 5242880
+      and allowed_mime_types = array['image/jpeg','image/png','image/webp','image/gif']::text[]
+  ) then
+    raise exception 'Existing listing-images bucket settings are incompatible; review them before continuing';
+  end if;
+end;
+$$;
 
 drop policy if exists "Public can read listing images" on storage.objects;
 create policy "Public can read listing images" on storage.objects
@@ -142,3 +154,5 @@ create policy "Owners or admins delete listing images" on storage.objects
     bucket_id = 'listing-images'
     and ((storage.foldername(name))[1] = auth.uid()::text or public.is_admin())
   );
+
+commit;

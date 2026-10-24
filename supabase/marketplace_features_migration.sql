@@ -2,22 +2,46 @@
 -- The frontend uses wanted_offers (not a table named offers).
 -- Run after schema.sql and admin_upload_migration.sql in Supabase SQL Editor.
 
+begin;
+
 alter table public.listings
   add column if not exists pickup_latitude double precision,
   add column if not exists pickup_longitude double precision;
 
-alter table public.listings
-  drop constraint if exists listings_public_coordinates_valid;
-alter table public.listings
-  add constraint listings_public_coordinates_valid check (
-    (pickup_latitude is null and pickup_longitude is null)
-    or (
-      pickup_latitude is not null
-      and pickup_longitude is not null
-      and pickup_latitude between -90 and 90
-      and pickup_longitude between -180 and 180
+do $$
+begin
+  if exists (
+    select 1 from public.listings
+    where not (
+      (pickup_latitude is null and pickup_longitude is null)
+      or (
+        pickup_latitude is not null
+        and pickup_longitude is not null
+        and pickup_latitude between -90 and 90
+        and pickup_longitude between -180 and 180
+      )
     )
-  );
+  ) then
+    raise exception 'Existing listing coordinates are invalid; inspect them before replacing listings_public_coordinates_valid';
+  end if;
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.listings'::regclass
+      and conname = 'listings_public_coordinates_valid'
+  ) then
+    alter table public.listings
+      add constraint listings_public_coordinates_valid check (
+        (pickup_latitude is null and pickup_longitude is null)
+        or (
+          pickup_latitude is not null
+          and pickup_longitude is not null
+          and pickup_latitude between -90 and 90
+          and pickup_longitude between -180 and 180
+        )
+      );
+  end if;
+end;
+$$;
 
 create or replace function public.round_public_pickup_coordinates()
 returns trigger
@@ -69,6 +93,26 @@ create table if not exists public.wanted_offers (
   updated_at timestamptz not null default now()
 );
 
+do $$
+begin
+  if exists (
+    select 1 from public.wanted_offers
+    where listing_id is not null
+    group by wanted_request_id, offerer_id, listing_id
+    having count(*) > 1
+  ) then
+    raise exception 'Duplicate wanted_offers for the same request, offerer, and listing exist; inspect them before creating wanted_offers_one_per_listing';
+  end if;
+  if exists (
+    select 1 from public.wanted_offers
+    where listing_id is null
+    group by wanted_request_id, offerer_id
+    having count(*) > 1
+  ) then
+    raise exception 'Duplicate no-listing wanted_offers for the same request and offerer exist; inspect them before creating wanted_offers_one_without_listing';
+  end if;
+end;
+$$;
 create unique index if not exists wanted_offers_one_per_listing
   on public.wanted_offers(wanted_request_id, offerer_id, listing_id)
   where listing_id is not null;
@@ -121,11 +165,17 @@ create table if not exists public.notifications (
   actor_id uuid references public.profiles(id) on delete set null,
   kind text not null check (kind in (
     'booking_requested','booking_approved','booking_rejected','booking_cancelled',
-    'chat_message','offer_submitted','offer_accepted','offer_declined','request_closed'
+    'booking_completed','booking_handover','booking_received','booking_returned',
+    'review_received','report_updated','chat_message','offer_submitted',
+    'offer_accepted','offer_declined','request_closed','payment_submitted',
+    'payment_verified','payment_rejected','deposit_refund_pending','deposit_refunded',
+    'payout_pending','payout_paid','meeting_point_updated'
   )),
   title text not null,
   body text not null,
-  link_type text not null check (link_type in ('listing','booking','conversation','wanted_request','offer')),
+  link_type text not null check (
+    link_type in ('listing','booking','conversation','wanted_request','offer','review','report','payment')
+  ),
   link_id uuid not null,
   read_at timestamptz,
   created_at timestamptz not null default now()
@@ -628,3 +678,5 @@ end;
 $$;
 
 notify pgrst, 'reload schema';
+
+commit;

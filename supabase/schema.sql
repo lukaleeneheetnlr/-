@@ -49,12 +49,34 @@ create index if not exists bookings_renter_created_idx on public.bookings(renter
 create index if not exists bookings_listing_dates_idx on public.bookings(listing_id, start_date, end_date);
 
 -- Reject overlapping approved reservations for the same physical item.
-alter table public.bookings drop constraint if exists approved_dates_do_not_overlap;
-alter table public.bookings add constraint approved_dates_do_not_overlap
-  exclude using gist (
-    listing_id with =,
-    daterange(start_date, end_date, '[]') with &&
-  ) where (status = 'approved');
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.bookings'::regclass
+      and conname = 'approved_dates_do_not_overlap'
+  ) then
+    if exists (
+      select 1
+      from public.bookings a
+      join public.bookings b
+        on b.listing_id = a.listing_id
+       and b.id > a.id
+       and b.status = 'approved'
+       and daterange(b.start_date, b.end_date, '[]')
+           && daterange(a.start_date, a.end_date, '[]')
+      where a.status = 'approved'
+    ) then
+      raise exception 'Existing approved bookings overlap; resolve these records before adding approved_dates_do_not_overlap';
+    end if;
+    alter table public.bookings add constraint approved_dates_do_not_overlap
+      exclude using gist (
+        listing_id with =,
+        daterange(start_date, end_date, '[]') with &&
+      ) where (status = 'approved');
+  end if;
+end;
+$$;
 
 -- Profiles are intentionally limited to public display information, not auth secrets.
 alter table public.profiles enable row level security;
@@ -311,10 +333,20 @@ grant execute on function public.admin_list_users() to authenticated;
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('listing-images', 'listing-images', true, 5242880,
         array['image/jpeg','image/png','image/webp','image/gif'])
-on conflict (id) do update set
-  public = excluded.public,
-  file_size_limit = excluded.file_size_limit,
-  allowed_mime_types = excluded.allowed_mime_types;
+on conflict (id) do nothing;
+do $$
+begin
+  if not exists (
+    select 1 from storage.buckets
+    where id = 'listing-images'
+      and public = true
+      and file_size_limit <= 5242880
+      and allowed_mime_types = array['image/jpeg','image/png','image/webp','image/gif']::text[]
+  ) then
+    raise exception 'Existing listing-images bucket settings are incompatible; review them before continuing';
+  end if;
+end;
+$$;
 
 drop policy if exists "Public can read listing images" on storage.objects;
 create policy "Public can read listing images" on storage.objects

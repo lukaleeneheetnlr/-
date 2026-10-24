@@ -84,16 +84,21 @@ SQL สร้าง Row Level Security (RLS), สร้าง profile หลั�
 1. `schema.sql`
 2. `admin_upload_migration.sql`
 3. `marketplace_features_migration.sql`
-4. `booking_lifecycle_migration.sql`
-5. `rental_handover_reviews_reports_migration.sql`
-6. `payment_deposit_migration.sql`
-7. `profile_contact_evidence_migration.sql`
-8. `service_fee_promptpay_payout_migration.sql`
-9. `meeting_points_route_migration.sql`
+4. `chat_attachments_migration.sql` (ตัวเลือกสำหรับรูปภาพ/การ์ดรายการในแชต; ต้องรันหลัง marketplace)
+5. `booking_lifecycle_migration.sql`
+6. `rental_handover_reviews_reports_migration.sql`
+7. `payment_deposit_migration.sql`
+8. `profile_contact_evidence_migration.sql`
+9. `service_fee_promptpay_payout_migration.sql`
+10. `meeting_points_route_migration.sql`
 
 ถ้าใช้ฟอร์มประกาศที่อนุญาตให้เว้นตำแหน่ง สภาพสินค้า หรือรายละเอียด ให้ตรวจและติดตั้ง `listing_optional_fields_migration.sql` หลัง `schema.sql` ก่อนเปิดรับประกาศดังกล่าวด้วย ลำดับนี้เป็น dependency ของโค้ด ไม่ใช่หลักฐานว่า migration ใดถูกติดตั้งบน project แล้ว
 
+`promote_admin.sql` เป็นคำสั่งตั้งสิทธิ์ผู้ดูแลเฉพาะบัญชี ไม่ใช่ migration สำหรับรันตามลำดับ ให้ตรวจตัวตนบัญชีและรันแยกหลัง `admin_upload_migration.sql` เท่านั้น ส่วน `verify_rental_migrations.sql` และ `diagnose_migration.sql` เป็นไฟล์ตรวจสอบแบบอ่านอย่างเดียว ห้ามนำไปรวมใน migration ที่แก้ schema
+
 ก่อนตัดสินใจรัน ให้ตรวจ `supabase/verify_rental_migrations.sql` และ Table Editor/SQL Editor ว่ามีตาราง คอลัมน์ RLS, policies, functions, triggers และ bucket ตามที่คาดหรือไม่ สคริปต์ตรวจสอบเป็น read-only และไม่ยืนยันประวัติการรัน migration; ตรวจ migration history ของ project แยกต่างหาก จากนั้นรันเฉพาะไฟล์ที่ยังขาดตามลำดับ โดยตรวจผลแต่ละไฟล์ก่อนดำเนินไฟล์ถัดไป หากพบ policy หรือ bucket เดิมที่มีสิทธิ์กว้าง/การตั้งค่าไม่ตรง ให้หยุดและตรวจสอบก่อน อย่าปิด RLS หรือเปลี่ยน bucket ให้ public
+
+หาก migration แจ้งว่าค่า `notifications.kind`, `notifications.link_type`, หรือข้อมูลเดิมไม่ผ่าน constraint ให้รัน `supabase/diagnose_migration.sql` แยกใน SQL Editor เพื่อดู definition และจำนวนข้อมูลก่อน ห้ามลบหรือแก้ข้อมูลเพื่อให้ migration ผ่านโดยไม่ตรวจสอบสาเหตุ
 
 ## B. ตั้งค่า URL และ key ให้เว็บไซต์
 

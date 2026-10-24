@@ -10,6 +10,31 @@ alter table public.bookings
   add column if not exists renter_returned_at timestamptz,
   add column if not exists owner_return_received_at timestamptz;
 
+do $$
+begin
+  if exists (
+    select 1 from public.notifications
+    where kind not in (
+      'booking_requested','booking_approved','booking_rejected','booking_cancelled',
+      'booking_completed','booking_handover','booking_received','booking_returned',
+      'review_received','report_updated','chat_message','offer_submitted',
+      'offer_accepted','offer_declined','request_closed','payment_submitted',
+      'payment_verified','payment_rejected','deposit_refund_pending','deposit_refunded',
+      'payout_pending','payout_paid','meeting_point_updated'
+    )
+  ) then
+    raise exception 'Existing notifications.kind values are outside the supported set; inspect them with diagnose_migration.sql before replacing the constraint';
+  end if;
+  if exists (
+    select 1 from public.notifications
+    where link_type not in (
+      'listing','booking','conversation','wanted_request','offer','review','report','payment'
+    )
+  ) then
+    raise exception 'Existing notifications.link_type values are outside the supported set; inspect them before replacing the constraint';
+  end if;
+end;
+$$;
 alter table public.notifications
   drop constraint if exists notifications_kind_check;
 alter table public.notifications
@@ -17,13 +42,15 @@ alter table public.notifications
     'booking_requested','booking_approved','booking_rejected','booking_cancelled',
     'booking_completed','booking_handover','booking_received','booking_returned',
     'review_received','report_updated','chat_message','offer_submitted',
-    'offer_accepted','offer_declined','request_closed'
+    'offer_accepted','offer_declined','request_closed','payment_submitted',
+    'payment_verified','payment_rejected','deposit_refund_pending','deposit_refunded',
+    'payout_pending','payout_paid','meeting_point_updated'
   ));
 alter table public.notifications
   drop constraint if exists notifications_link_type_check;
 alter table public.notifications
   add constraint notifications_link_type_check check (
-    link_type in ('listing','booking','conversation','wanted_request','offer','review','report')
+    link_type in ('listing','booking','conversation','wanted_request','offer','review','report','payment')
   );
 
 create table if not exists public.rental_reviews (
@@ -38,6 +65,25 @@ create table if not exists public.rental_reviews (
   created_at timestamptz not null default now(),
   constraint rental_reviews_one_per_booking_reviewer unique (booking_id, reviewer_id)
 );
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'public.rental_reviews'::regclass
+      and conname = 'rental_reviews_one_per_booking_reviewer'
+  ) then
+    if exists (
+      select 1 from public.rental_reviews
+      group by booking_id, reviewer_id
+      having count(*) > 1
+    ) then
+      raise exception 'Duplicate reviews exist for the same booking and reviewer; inspect them before adding rental_reviews_one_per_booking_reviewer';
+    end if;
+    alter table public.rental_reviews
+      add constraint rental_reviews_one_per_booking_reviewer unique (booking_id, reviewer_id);
+  end if;
+end;
+$$;
 create index if not exists rental_reviews_listing_created_idx
   on public.rental_reviews(listing_id, created_at desc) where is_hidden = false;
 create index if not exists rental_reviews_reviewee_created_idx
