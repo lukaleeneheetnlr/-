@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="theme-color" content="#f8f4e9" />
+  <meta name="theme-color" content="#f6f8f5" />
   <meta name="description" content="Campus Sharing Hub — พื้นที่ค้นหาและแบ่งปันของใช้ระยะสั้นในมหาวิทยาลัย" />
   <title>Campus Sharing Hub — ของที่ต้องใช้ ไม่จำเป็นต้องซื้อ</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -117,20 +117,23 @@
     @media(max-width:700px){.nav-actions #openRequestTop,.nav-actions #openAuthTop,.nav-actions #openAccountTop{display:none}.nav-actions #openListingTop{padding:9px 12px}}
     .admin-stat-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:4px 0 16px}.admin-stat{padding:18px;border:1px solid #e3eae0;border-radius:17px;background:#f6f8f2;display:flex;flex-direction:column;gap:8px}.admin-stat span{font-size:12px;color:var(--muted)}.admin-stat strong{font-size:30px;line-height:1.1;font-family:Manrope,'IBM Plex Sans Thai',sans-serif;color:var(--green-dark)}.admin-welcome{grid-template-columns:1fr;margin-top:12px;background:#fffdf7}.admin-shortcuts{display:flex;gap:9px;flex-wrap:wrap;margin-top:14px}.admin-shortcuts .btn{white-space:normal}@media(max-width:700px){.admin-stat-grid{grid-template-columns:1fr 1fr}.admin-stat:first-child{grid-column:1/-1}.admin-stat strong{font-size:25px}.account-row{grid-template-columns:1fr}.account-actions{justify-content:flex-start}}
   </style>
+  <link rel="stylesheet" href="/src/styles.css" />
 </head>
 <body>
   <header class="topbar">
     <div class="container nav">
-      <a class="brand" href="#home" aria-label="Campus Sharing Hub หน้าหลัก"><span class="brand-mark">↗</span><span>campus <em>sharing</em></span></a>
+      <a class="brand" href="#home" aria-label="Campus Sharing Hub หน้าหลัก"><span class="brand-mark" aria-hidden="true">CS</span><span>campus <em>sharing</em></span></a>
       <nav class="nav-links" aria-label="เมนูหลัก">
         <a href="#explore">ค้นหาของ</a><a href="#demand">ตามหาของที่ต้องการ</a><a href="#how">วิธีใช้งาน</a>
       </nav>
       <div class="nav-actions">
         <button class="btn btn-secondary" id="openAuthTop">เข้าสู่ระบบ</button>
         <button class="btn btn-secondary" id="openAccountTop" hidden>บัญชีของฉัน</button>
+        <button class="btn btn-secondary" id="openInboxTop" data-action="open-inbox" hidden>ข้อความ</button>
+        <button class="btn btn-secondary notification-nav" id="openNotificationsTop" data-action="open-notifications" hidden>แจ้งเตือน <span class="notification-count" id="notificationCount" hidden>0</span></button>
         <button class="btn btn-secondary" id="openRequestTop">＋ แจ้งสิ่งที่ต้องการ</button>
         <button class="btn btn-primary" id="openListingTop">ลงประกาศปล่อยเช่า</button>
-        <button class="icon-btn mobile-menu" id="mobileMenu" aria-label="เปิดเมนู">☰</button>
+        <button class="icon-btn mobile-menu" id="mobileMenu" aria-label="เปิดเมนู"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></button>
       </div>
     </div>
   </header>
@@ -140,17 +143,16 @@
     <section class="hero">
       <div class="container hero-grid">
         <div>
-          <div class="eyebrow"><span class="eyebrow-dot"></span> BUILT FOR CAMPUS LIFE</div>
           <h1>ของที่ต้องใช้<br>ไม่จำเป็นต้อง<br><span>ซื้อทุกครั้ง</span></h1>
           <p class="hero-copy">พื้นที่ให้คนในมหาวิทยาลัยค้นหา เช่า และแบ่งปันอุปกรณ์ที่จำเป็นสำหรับโปรเจกต์และกิจกรรม ใช้เท่าที่ต้องใช้ จ่ายเท่าที่จำเป็น</p>
           <div class="hero-actions"><a class="btn btn-primary" href="#explore">ค้นหาของที่ต้องใช้ <span>↗</span></a><button class="btn btn-secondary" id="openRequestHero">บอกเราว่ากำลังหาอะไร</button></div>
-          <div class="proof-row"><span class="proof-item"><span class="proof-icon">✓</span> เลือกวันใช้งานได้</span><span class="proof-item"><span class="proof-icon">▤</span> เช็กเงื่อนไขก่อนตกลง</span><span class="proof-item"><span class="proof-icon">⌖</span> เน้นนัดรับในมหาวิทยาลัย</span></div>
+          <div class="proof-row"><span class="proof-item"><span class="proof-icon" aria-hidden="true">01</span> เลือกวันใช้งานได้</span><span class="proof-item"><span class="proof-icon" aria-hidden="true">02</span> เช็กเงื่อนไขก่อนตกลง</span><span class="proof-item"><span class="proof-icon" aria-hidden="true">03</span> เน้นนัดรับในมหาวิทยาลัย</span></div>
         </div>
         <div class="hero-art" aria-label="ภาพตัวอย่างการใช้อุปกรณ์ร่วมกัน">
           <img class="hero-photo" src="https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1000&q=85" alt="นักศึกษากำลังใช้งานคอมพิวเตอร์" onerror="this.style.display='none'">
           <div class="hero-sticker">SHARE<br>MORE<br>WASTE LESS</div>
-          <div class="float-card one"><div class="mini-icon">📷</div><div><strong>อุปกรณ์สำหรับโปรเจกต์</strong><small>ค้นหาและจองตามวันใช้งาน</small></div></div>
-          <div class="float-card two"><div class="mini-icon">📍</div><div><strong>นัดรับใกล้คุณ</strong><small>ในพื้นที่มหาวิทยาลัย</small></div></div>
+          <div class="float-card one">          <div class="mini-icon" aria-hidden="true">01</div><div><strong>อุปกรณ์สำหรับโปรเจกต์</strong><small>ค้นหาและจองตามวันใช้งาน</small></div></div>
+          <div class="float-card two">          <div class="mini-icon" aria-hidden="true">02</div><div><strong>นัดรับใกล้คุณ</strong><small>ในพื้นที่มหาวิทยาลัย</small></div></div>
         </div>
       </div>
     </section>
@@ -169,25 +171,28 @@
     <section class="section container" id="categories">
       <div class="section-head"><div><div class="section-kicker">BROWSE BY CATEGORY</div><h2>เริ่มจากสิ่งที่คุณกำลังหา</h2><p class="section-desc">เลือกหมวดหมู่เพื่อดูของที่มีให้เช่าในเดโมนี้</p></div></div>
       <div class="category-grid" id="categoryGrid">
-        <button class="category-card" data-category="media" aria-pressed="false"><span class="category-symbol">📷</span><span><strong>ถ่ายภาพและวิดีโอ</strong><small>กล้อง · ไมค์ · ขาตั้ง</small></span></button>
-        <button class="category-card" data-category="study" aria-pressed="false"><span class="category-symbol">🛠️</span><span><strong>เรียนและโปรเจกต์</strong><small>เครื่องมือ · อุปกรณ์</small></span></button>
-        <button class="category-card" data-category="event" aria-pressed="false"><span class="category-symbol">🎤</span><span><strong>กิจกรรมและอีเวนต์</strong><small>เสียง · แสง · นำเสนอ</small></span></button>
-        <button class="category-card" data-category="fashion" aria-pressed="false"><span class="category-symbol">👔</span><span><strong>เสื้อผ้าและโอกาสพิเศษ</strong><small>ชุดสัมภาษณ์ · พร็อพ</small></span></button>
-        <button class="category-card" data-category="other" aria-pressed="false"><span class="category-symbol">📦</span><span><strong>อื่น ๆ</strong><small>ของใช้เฉพาะกิจ</small></span></button>
+        <button class="category-card" data-category="media" aria-pressed="false"><span class="category-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8h4l1.5-2h5L16 8h4v11H4zM12 10a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Z"/></svg></span><span><strong>ถ่ายภาพและวิดีโอ</strong><small>กล้อง · ไมค์ · ขาตั้ง</small></span></button>
+        <button class="category-card" data-category="study" aria-pressed="false"><span class="category-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m14 6 4 4M4 20l4.5-1 10-10a2.8 2.8 0 0 0-4-4l-10 10L4 20ZM4 4h5M4 8h3"/></svg></span><span><strong>เรียนและโปรเจกต์</strong><small>เครื่องมือ · อุปกรณ์</small></span></button>
+        <button class="category-card" data-category="event" aria-pressed="false"><span class="category-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 18V5l11-2v13M9 8l11-2M5 18a3 3 0 1 0 0 5 3 3 0 0 0 0-5ZM16 16a3 3 0 1 0 0 5 3 3 0 0 0 0-5Z"/></svg></span><span><strong>กิจกรรมและอีเวนต์</strong><small>เสียง · แสง · นำเสนอ</small></span></button>
+        <button class="category-card" data-category="fashion" aria-pressed="false"><span class="category-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m8 4 4 2 4-2 5 4-3 4-2-2v10H8V10l-2 2-3-4z"/></svg></span><span><strong>เสื้อผ้าและโอกาสพิเศษ</strong><small>ชุดสัมภาษณ์ · พร็อพ</small></span></button>
+        <button class="category-card" data-category="other" aria-pressed="false"><span class="category-symbol" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM3 4h18v3H3zM9 11h6"/></svg></span><span><strong>อื่น ๆ</strong><small>ของใช้เฉพาะกิจ</small></span></button>
       </div>
     </section>
 
     <section class="section listings-section container" id="explore">
       <div class="section-head"><div><div class="section-kicker">AVAILABLE NEAR CAMPUS</div><h2>ของที่พร้อมให้เช่า</h2><p class="section-desc" id="listingSectionDescription">ค้นหาอุปกรณ์ที่เหมาะกับโปรเจกต์และกิจกรรมของคุณ</p></div><a href="#demand" class="text-link">หาไม่เจอ? แจ้งความต้องการ ↗</a></div>
-      <div class="toolbar"><div class="filter-row" id="filterRow"><button class="chip active" data-category="all" aria-pressed="true">ทั้งหมด</button><button class="chip" data-category="media">ถ่ายภาพ/วิดีโอ</button><button class="chip" data-category="study">เรียน/โปรเจกต์</button><button class="chip" data-category="event">กิจกรรม</button><button class="chip" data-category="fashion">เสื้อผ้า</button><button class="chip" data-category="favorites">♡ ที่บันทึกไว้</button></div><select class="sort-select" id="sortSelect" aria-label="เรียงลำดับ"><option value="recommended">เรียงตามแนะนำ</option><option value="priceAsc">ราคา: ต่ำไปสูง</option><option value="priceDesc">ราคา: สูงไปต่ำ</option></select></div>
+      <div class="toolbar"><div class="filter-row" id="filterRow"><button class="chip active" data-category="all" aria-pressed="true">ทั้งหมด</button><button class="chip" data-category="media">ถ่ายภาพ/วิดีโอ</button><button class="chip" data-category="study">เรียน/โปรเจกต์</button><button class="chip" data-category="event">กิจกรรม</button><button class="chip" data-category="fashion">เสื้อผ้า</button><button class="chip" data-category="favorites">ที่บันทึกไว้</button></div><div class="listing-tools"><select class="sort-select" id="sortSelect" aria-label="เรียงลำดับ"><option value="recommended">เรียงตามแนะนำ</option><option value="priceAsc">ราคา: ต่ำไปสูง</option><option value="priceDesc">ราคา: สูงไปต่ำ</option></select><div class="view-switch" role="group" aria-label="มุมมองรายการ"><button class="chip active" id="listViewButton" type="button" aria-pressed="true">รายการ</button><button class="chip" id="mapViewButton" type="button" aria-pressed="false">แผนที่</button></div></div></div>
       <div class="listing-grid" id="listingGrid" aria-live="polite"></div>
+      <div id="listingMap" class="listing-map" hidden aria-label="แผนที่แสดงจุดรับโดยประมาณ"></div>
     </section>
 
     <section class="demand-section container" id="demand">
       <div class="demand-card">
-        <div class="demand-content"><div class="section-kicker">DEMAND FIRST</div><h2>หาไม่เจอในรายการ?<br>บอกเราก่อนสิ</h2><p>ระบุของที่ต้องการ วันใช้งาน และงบประมาณ ระบบจะบันทึกความต้องการไว้เป็นรายการทดลอง เพื่อดูว่ามีใครสามารถเสนอของที่ตรงกันได้หรือไม่</p><button class="btn btn-lime" id="openRequestMain">＋ แจ้งสิ่งที่ต้องการเช่า</button></div>
-        <div class="demand-visual"><img src="https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1000&q=85" alt="อุปกรณ์ทำงานบนโต๊ะ" onerror="this.style.display='none'"><div class="demand-note"><small>ตัวอย่างคำขอเช่า</small><strong>ต้องการไมค์สำหรับถ่ายวิดีโอ 2 วัน</strong><div class="request-tags"><span>งบไม่เกิน ฿150/วัน</span><span>รับในมหาวิทยาลัย</span></div></div></div>
+        <div class="demand-content"><div class="section-kicker">DEMAND FIRST</div><h2>หาไม่เจอในรายการ?<br>บอกเราก่อนสิ</h2><p>ระบุของที่ต้องการ วันใช้งาน และงบประมาณ เพื่อให้เพื่อนนักศึกษาที่มีของชิ้นนั้นติดต่อกลับได้</p><button class="btn btn-lime" id="openRequestMain">＋ แจ้งสิ่งที่ต้องการเช่า</button></div>
+        <div class="demand-visual"><img src="https://images.unsplash.com/photo-1498050108023-c5249f4df085?auto=format&fit=crop&w=1000&q=85" alt="อุปกรณ์ทำงานบนโต๊ะ" onerror="this.style.display='none'"><div class="demand-note"><small>ประกาศความต้องการ</small><strong>เพื่อนนักศึกษาสามารถส่งข้อเสนอพร้อมประกาศสินค้าได้</strong></div></div>
       </div>
+      <div class="wanted-board-head"><div><h3>กำลังตามหาอยู่</h3><p>ข้อเสนอจากสมาชิกจริง เชื่อมต่อกับผู้ลงประกาศโดยตรง</p></div></div>
+      <div id="wantedRequestsList" class="wanted-grid" aria-live="polite"><div class="account-empty">กำลังโหลดความต้องการ…</div></div>
     </section>
 
     <section class="section container" id="how">
@@ -199,10 +204,10 @@
       </div>
     </section>
 
-    <section class="container trust-strip"><div class="trust-left"><div class="trust-symbol">🛡️</div><div><strong>ความปลอดภัยต้องมาก่อน</strong><p>เดโมนี้ยังไม่ยืนยันตัวตน ไม่รับเงินจริง และไม่มีระบบประกันความเสียหาย โปรดใช้ข้อมูลตัวอย่างเท่านั้น</p></div></div><a class="btn btn-secondary" href="#how">อ่านขั้นตอนการใช้งาน</a></section>
+    <section class="container trust-strip"><div class="trust-left"><div class="trust-symbol" aria-hidden="true">SAFE</div><div><strong>ความปลอดภัยต้องมาก่อน</strong><p>ตรวจสอบรายละเอียดและนัดรับในพื้นที่สาธารณะก่อนส่งมอบสินค้า</p></div></div><a class="btn btn-secondary" href="#how">อ่านขั้นตอนการใช้งาน</a></section>
   </main>
 
-  <footer class="footer"><div class="container footer-row"><a class="brand" href="#home"><span class="brand-mark">↗</span><span>campus <em>sharing</em></span></a><div class="footer-note" id="footerNote">Campus Sharing Hub · Prototype Demo<br>ข้อมูลรายการและธุรกรรมเก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น ยังไม่ใช่บริการเช่าจริง</div></div></footer>
+  <footer class="footer"><div class="container footer-row"><a class="brand" href="#home"><span class="brand-mark" aria-hidden="true">CS</span><span>campus <em>sharing</em></span></a><div class="footer-note" id="footerNote">Campus Sharing Hub · Prototype Demo<br>ข้อมูลรายการและธุรกรรมเก็บไว้ในเบราว์เซอร์เครื่องนี้เท่านั้น ยังไม่ใช่บริการเช่าจริง</div></div></footer>
   <div class="mobile-bottom"><button class="btn btn-secondary" id="openRequestMobile">＋ แจ้งสิ่งที่ต้องการ</button><button class="btn btn-primary" id="openListingMobile">ลงประกาศ</button></div>
 
   <div class="modal-backdrop" id="modalBackdrop" role="dialog" aria-modal="true" aria-labelledby="modalTitle"><div class="modal" id="modalBox"><div class="modal-head"><div><h2 id="modalTitle">หัวข้อ</h2><p id="modalSubtitle"></p></div><button class="close-modal" id="closeModal" aria-label="ปิดหน้าต่าง">×</button></div><div class="modal-content" id="modalContent"></div></div></div>
